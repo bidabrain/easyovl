@@ -1,0 +1,14 @@
+{
+  "name": "easyovl-manager",
+  "version": "1.0.0",
+  "description": "Web UI to deploy and manage Overleaf CE+ with Docker and Cloudflare Tunnel",
+  "type": "module",
+  "private": true,
+  "license": "AGPL-3.0",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

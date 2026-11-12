@@ -1,0 +1,5 @@
+# runtime data: config with secrets, generated compose, backups
+/data/
+.env
+node_modules/
+.claude/

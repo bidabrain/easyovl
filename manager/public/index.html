@@ -1,0 +1,448 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>EasyOVL 控制台</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%23138a36'/><text x='16' y='22' font-size='16' text-anchor='middle' fill='white' font-family='Arial' font-weight='700'>O</text></svg>" />
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <!-- auth screen -->
+  <section id="auth" class="auth hidden">
+    <form id="auth-form" class="auth-card">
+      <div class="brand big"><span class="logo">O</span> EasyOVL</div>
+      <p id="auth-hint" class="muted"></p>
+      <label class="field">
+        <span>管理密码</span>
+        <input id="auth-pass" type="password" autocomplete="current-password" required minlength="6" />
+      </label>
+      <label class="field hidden" id="auth-pass2-wrap">
+        <span>再次输入</span>
+        <input id="auth-pass2" type="password" autocomplete="new-password" minlength="6" />
+      </label>
+      <p id="auth-error" class="error"></p>
+      <button class="btn primary block" type="submit" id="auth-submit">登录</button>
+    </form>
+  </section>
+
+  <!-- app -->
+  <div id="app" class="app hidden">
+    <aside class="sidebar">
+      <div class="brand"><span class="logo">O</span> EasyOVL</div>
+      <nav id="nav">
+        <a data-page="overview" class="active">概览</a>
+        <a data-page="site">站点</a>
+        <a data-page="features">功能</a>
+        <a data-page="compile">编译</a>
+        <a data-page="email">邮件</a>
+        <a data-page="tunnel">外网访问</a>
+        <a data-page="users">用户</a>
+        <a data-page="logs">日志</a>
+        <a data-page="backups">备份</a>
+        <a data-page="advanced">高级</a>
+      </nav>
+      <div class="sidebar-foot">
+        <button class="btn ghost small" id="theme-toggle" type="button">切换主题</button>
+        <button class="btn ghost small" id="logout" type="button">退出</button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <!-- ============ overview ============ -->
+      <section class="page" data-page="overview">
+        <header class="page-head">
+          <h1>概览</h1>
+          <div class="actions">
+            <button class="btn primary" data-action="apply">启动 / 应用配置</button>
+            <button class="btn" data-action="restart">重启</button>
+            <button class="btn" data-action="stop">停止</button>
+          </div>
+        </header>
+
+        <div id="docker-warning" class="banner danger hidden"></div>
+        <div id="first-run" class="banner info hidden">
+          还没有启动过 Overleaf。先看看 <a data-goto="site">站点</a> 和 <a data-goto="tunnel">外网访问</a> 设置，然后点击右上角「启动 / 应用配置」。首次启动需要下载约 2–3 GB 的镜像。
+        </div>
+        <div id="admin-hint" class="banner success hidden"></div>
+        <div id="stale-hint" class="banner warn hidden">
+          快速隧道地址已变化，但 Overleaf 的站点地址还是旧的。点击「启动 / 应用配置」更新。
+        </div>
+
+        <div class="cards">
+          <div class="card stat">
+            <div class="stat-label">Overleaf</div>
+            <div class="stat-value" id="st-overleaf">—</div>
+            <div class="stat-sub" id="st-image"></div>
+          </div>
+          <div class="card stat">
+            <div class="stat-label">外网访问</div>
+            <div class="stat-value" id="st-tunnel">—</div>
+            <div class="stat-sub" id="st-tunnel-sub"></div>
+          </div>
+          <div class="card stat">
+            <div class="stat-label">Docker</div>
+            <div class="stat-value" id="st-docker">—</div>
+            <div class="stat-sub" id="st-docker-sub"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>访问地址</h2>
+          <div id="links" class="links"></div>
+        </div>
+
+        <div class="card">
+          <h2>容器</h2>
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr><th>服务</th><th>状态</th><th>镜像</th><th></th></tr></thead>
+              <tbody id="containers"><tr><td colspan="4" class="muted">尚未创建容器</td></tr></tbody>
+            </table>
+          </div>
+          <div class="row-actions">
+            <button class="btn small" data-action="pull">拉取镜像更新</button>
+            <button class="btn small danger-outline" data-action="down">移除容器（保留数据）</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ site ============ -->
+      <section class="page hidden" data-page="site" data-config>
+        <header class="page-head"><h1>站点</h1></header>
+        <div class="card">
+          <h2>基本信息</h2>
+          <div class="grid">
+            <label class="field"><span>站点名称</span><input data-k="overleaf.appName" /></label>
+            <label class="field"><span>导航栏标题</span><input data-k="overleaf.navTitle" /></label>
+            <label class="field"><span>管理员联系邮箱</span><input data-k="overleaf.adminEmail" type="email" placeholder="admin@example.com" /></label>
+            <label class="field">
+              <span>站点地址（留空自动）</span>
+              <input data-k="overleaf.siteUrl" placeholder="自动" />
+              <small class="muted">当前生效：<code id="site-url-effective"></code></small>
+            </label>
+          </div>
+        </div>
+        <div class="card">
+          <h2>端口与网络</h2>
+          <div class="grid">
+            <label class="field"><span>本机端口</span><input data-k="overleaf.port" type="number" min="1" max="65535" /></label>
+            <label class="field">
+              <span>监听范围</span>
+              <select data-k="overleaf.bindAddress">
+                <option value="0.0.0.0">局域网可访问 (0.0.0.0)</option>
+                <option value="127.0.0.1">仅本机 (127.0.0.1)</option>
+              </select>
+            </label>
+          </div>
+          <label class="check"><input type="checkbox" data-k="overleaf.behindProxy" /> 位于反向代理 / 隧道之后（推荐开启）</label>
+          <label class="check"><input type="checkbox" data-k="overleaf.secureCookie" /> 仅 HTTPS Cookie（开启后无法通过本地 http 地址登录）</label>
+        </div>
+        <div class="card">
+          <h2>Overleaf 版本</h2>
+          <div class="grid">
+            <label class="field"><span>镜像仓库</span><input data-k="overleaf.image" /></label>
+            <label class="field">
+              <span>版本标签</span>
+              <input data-k="overleaf.tag" list="tag-list" />
+              <datalist id="tag-list"></datalist>
+              <small class="muted" id="tag-hint">正在从 Docker Hub 读取版本列表…</small>
+            </label>
+          </div>
+          <p class="muted">升级前请先在「备份」页做一次备份。CE+ 6.x 之前的版本需按官方说明先升级到 5.5.6。</p>
+        </div>
+      </section>
+
+      <!-- ============ features ============ -->
+      <section class="page hidden" data-page="features" data-config>
+        <header class="page-head"><h1>功能</h1></header>
+        <div class="card">
+          <h2>注册与账户</h2>
+          <label class="check"><input type="checkbox" data-k="features.registration" /> 开放注册页面（任何人可以自行注册）</label>
+          <label class="field">
+            <span>允许注册的邮箱域名（逗号分隔，可用 *.example.com，留空不限制）</span>
+            <input data-k="features.allowedDomains" placeholder="example.com, *.example.edu" />
+          </label>
+          <label class="check"><input type="checkbox" data-k="features.emailConfirmationDisabled" /> 不要求邮箱验证</label>
+        </div>
+        <div class="card">
+          <h2>编辑器功能</h2>
+          <label class="check"><input type="checkbox" data-k="features.historyRestore" /> 允许从历史版本恢复文件 / 项目</label>
+          <label class="check"><input type="checkbox" data-k="features.pandoc" /> Word / Markdown 导入导出（Pandoc）</label>
+          <label class="check"><input type="checkbox" data-k="features.conversions" /> 生成图片缩略图</label>
+          <div class="grid">
+            <label class="field">
+              <span>可链接的文件类型</span>
+              <input data-k="features.linkedFileTypes" />
+              <small class="muted">可选：project_file, project_output_file, url, zotero</small>
+            </label>
+            <label class="field"><span>最大上传大小 (MB)</span><input data-k="features.maxUploadSize" type="number" min="1" /></label>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ compile ============ -->
+      <section class="page hidden" data-page="compile" data-config>
+        <header class="page-head"><h1>编译</h1></header>
+        <div class="card">
+          <h2>编译方式</h2>
+          <div class="choice-grid two">
+            <label class="choice">
+              <input type="radio" name="sandbox" data-k="compile.sandbox" value="false" />
+              <div>
+                <strong>内置编译</strong>
+                <p class="muted">使用镜像自带的精简 TeX Live，下载最少、启动最快，但缺少很多宏包。所有用户共享同一个容器。</p>
+              </div>
+            </label>
+            <label class="choice">
+              <input type="radio" name="sandbox" data-k="compile.sandbox" value="true" />
+              <div>
+                <strong>沙盒编译（推荐）</strong>
+                <p class="muted">每次编译在独立的 TeX Live 容器中运行，宏包齐全、更安全。首次需下载 TeX Live 镜像（完整版约 5 GB）。</p>
+              </div>
+            </label>
+          </div>
+        </div>
+        <div class="card" id="sandbox-opts">
+          <h2>TeX Live 镜像</h2>
+          <label class="field">
+            <span>镜像列表（逗号分隔）</span>
+            <input data-k="compile.images" />
+            <small class="muted">例：texlive/texlive:latest-full, texlive/texlive:TL2024-historic</small>
+          </label>
+          <div class="grid">
+            <label class="field"><span>显示名称（与镜像一一对应）</span><input data-k="compile.imageNames" /></label>
+            <label class="field"><span>默认镜像（留空用第一个）</span><input data-k="compile.defaultImage" /></label>
+          </div>
+        </div>
+        <div class="card">
+          <h2>编译选项</h2>
+          <label class="check"><input type="checkbox" data-k="compile.shellEscape" /> 允许 -shell-escape（minted 等宏包需要；仅在信任所有用户时开启）</label>
+          <label class="field narrow"><span>编译超时（秒）</span><input data-k="compile.timeout" type="number" min="30" /></label>
+        </div>
+      </section>
+
+      <!-- ============ email ============ -->
+      <section class="page hidden" data-page="email" data-config>
+        <header class="page-head"><h1>邮件</h1></header>
+        <div class="card">
+          <label class="check"><input type="checkbox" data-k="email.enabled" /> 启用 SMTP 发信（用于邀请协作者、找回密码）</label>
+          <div class="grid" id="email-opts">
+            <label class="field"><span>发件地址</span><input data-k="email.fromAddress" type="email" placeholder="overleaf@example.com" /></label>
+            <label class="field"><span>SMTP 服务器</span><input data-k="email.host" placeholder="smtp.example.com" /></label>
+            <label class="field"><span>端口</span><input data-k="email.port" type="number" /></label>
+            <label class="field"><span>用户名</span><input data-k="email.user" autocomplete="off" /></label>
+            <label class="field"><span>密码</span><input data-k="email.pass" type="password" data-secret autocomplete="new-password" /></label>
+            <label class="field"><span>邮件页脚</span><input data-k="email.footer" /></label>
+          </div>
+          <label class="check"><input type="checkbox" data-k="email.secure" /> 使用 SSL/TLS 直连（端口 465 时勾选）</label>
+          <label class="check"><input type="checkbox" data-k="email.ignoreTls" /> 不使用 STARTTLS</label>
+          <label class="check"><input type="checkbox" data-k="email.rejectUnauthorized" /> 校验服务器证书</label>
+        </div>
+      </section>
+
+      <!-- ============ tunnel ============ -->
+      <section class="page hidden" data-page="tunnel" data-config>
+        <header class="page-head"><h1>外网访问</h1></header>
+        <div class="card">
+          <h2>Cloudflare Tunnel</h2>
+          <p class="muted">通过 Cloudflare Tunnel 把 Overleaf 安全地发布到公网，不需要公网 IP，也不需要在路由器上开端口。</p>
+          <div class="choice-grid">
+            <label class="choice">
+              <input type="radio" name="tmode" data-k="tunnel.mode" value="off" />
+              <div><strong>关闭</strong><p class="muted">只在本机 / 局域网访问。</p></div>
+            </label>
+            <label class="choice">
+              <input type="radio" name="tmode" data-k="tunnel.mode" value="quick" />
+              <div><strong>快速隧道</strong><p class="muted">无需账号，随机分配 *.trycloudflare.com 地址，每次重启都会变。适合临时使用。</p></div>
+            </label>
+            <label class="choice">
+              <input type="radio" name="tmode" data-k="tunnel.mode" value="api" />
+              <div><strong>自动配置（推荐）</strong><p class="muted">填写 API Token，自动创建隧道和 DNS，固定使用你自己的域名。</p></div>
+            </label>
+            <label class="choice">
+              <input type="radio" name="tmode" data-k="tunnel.mode" value="token" />
+              <div><strong>隧道令牌</strong><p class="muted">已在 Cloudflare 控制台建好隧道，只需粘贴令牌。</p></div>
+            </label>
+          </div>
+        </div>
+
+        <div class="card tmode-panel" data-tmode="quick">
+          <h2>快速隧道</h2>
+          <p>当前地址：<a id="quick-url" target="_blank" rel="noopener">（启动后显示）</a></p>
+          <label class="check"><input type="checkbox" data-k="tunnel.useQuickUrlAsSite" /> 把隧道地址设为 Overleaf 的站点地址（邀请邮件等链接会使用它；地址变化后需重新应用）</label>
+        </div>
+
+        <div class="card tmode-panel" data-tmode="api">
+          <h2>自动配置</h2>
+          <ol class="steps muted">
+            <li>打开 <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noopener">Cloudflare → API 令牌</a>，点击「创建令牌」→「创建自定义令牌」。</li>
+            <li>添加权限：<b>帐户 · Cloudflare Tunnel · 编辑</b>、<b>帐户 · 帐户设置 · 读取</b>、<b>区域 · DNS · 编辑</b>、<b>区域 · 区域 · 读取</b>。</li>
+            <li>把生成的令牌粘贴到下面，点击「验证并读取域名」。</li>
+          </ol>
+          <div class="grid">
+            <label class="field">
+              <span>API Token</span>
+              <input data-k="tunnel.apiToken" type="password" data-secret autocomplete="off" />
+            </label>
+            <div class="field">
+              <span>&nbsp;</span>
+              <button class="btn" type="button" id="cf-verify">验证并读取域名</button>
+            </div>
+            <label class="field">
+              <span>Cloudflare 帐户</span>
+              <select data-k="tunnel.accountId" id="cf-account"><option value="">—</option></select>
+            </label>
+            <label class="field">
+              <span>域名</span>
+              <select data-k="tunnel.zoneId" id="cf-zone"><option value="">—</option></select>
+            </label>
+            <label class="field">
+              <span>子域名</span>
+              <input data-k="tunnel.subdomain" placeholder="overleaf" />
+            </label>
+            <label class="field">
+              <span>隧道名称</span>
+              <input data-k="tunnel.tunnelName" />
+            </label>
+          </div>
+          <p>将发布到：<code id="cf-preview">—</code></p>
+          <p id="cf-msg" class="muted"></p>
+        </div>
+
+        <div class="card tmode-panel" data-tmode="token">
+          <h2>隧道令牌</h2>
+          <ol class="steps muted">
+            <li>在 <a href="https://one.dash.cloudflare.com/" target="_blank" rel="noopener">Cloudflare Zero Trust</a> → 网络 → 隧道，创建一个 Cloudflared 隧道。</li>
+            <li>在「公共主机名」中添加你的域名，服务类型选 <b>HTTP</b>，URL 填 <code>sharelatex:80</code>。</li>
+            <li>复制安装命令中 <code>--token</code> 后面的那一串，粘贴到下面。</li>
+          </ol>
+          <div class="grid">
+            <label class="field"><span>隧道令牌</span><input data-k="tunnel.token" type="password" data-secret autocomplete="off" /></label>
+            <label class="field"><span>公网域名</span><input data-k="tunnel.hostname" placeholder="overleaf.example.com" /></label>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ users ============ -->
+      <section class="page hidden" data-page="users">
+        <header class="page-head">
+          <h1>用户</h1>
+          <div class="actions"><button class="btn" id="users-refresh">刷新</button></div>
+        </header>
+        <div class="card">
+          <h2>创建用户</h2>
+          <form id="user-form" class="inline-form">
+            <input id="user-email" type="email" placeholder="user@example.com" required />
+            <label class="check"><input type="checkbox" id="user-admin" /> 管理员</label>
+            <button class="btn primary" type="submit">创建</button>
+          </form>
+          <div id="user-result" class="hidden result"></div>
+          <p class="muted">创建后会得到一个设置密码的链接，发给对方即可。第一个管理员也可以直接打开 Overleaf 的 <code>/launchpad</code> 页面创建。更多用户管理（删除、项目转移等）请用 Overleaf 自带的管理面板 <code>/admin/users</code>。</p>
+        </div>
+        <div class="card">
+          <h2>用户列表</h2>
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr><th>邮箱</th><th>姓名</th><th>角色</th><th>注册时间</th><th>最近登录</th></tr></thead>
+              <tbody id="users"><tr><td colspan="5" class="muted">加载中…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ logs ============ -->
+      <section class="page hidden" data-page="logs">
+        <header class="page-head">
+          <h1>日志</h1>
+          <div class="actions">
+            <select id="log-service">
+              <option value="sharelatex">Overleaf</option>
+              <option value="mongo">MongoDB</option>
+              <option value="redis">Redis</option>
+              <option value="cloudflared">Cloudflared</option>
+            </select>
+            <select id="log-tail">
+              <option>200</option><option selected>500</option><option>2000</option>
+            </select>
+            <label class="check inline"><input type="checkbox" id="log-follow" checked /> 自动刷新</label>
+            <button class="btn" id="log-refresh">刷新</button>
+          </div>
+        </header>
+        <pre id="log-text" class="console tall"></pre>
+      </section>
+
+      <!-- ============ backups ============ -->
+      <section class="page hidden" data-page="backups">
+        <header class="page-head">
+          <h1>备份</h1>
+          <div class="actions"><button class="btn primary" id="backup-create">立即备份</button></div>
+        </header>
+        <div class="card">
+          <p class="muted">备份包含 MongoDB 数据库和全部项目文件，保存在本项目的 <code>data/backups/</code> 目录。迁移到新电脑时，把备份目录复制过去，在这里点击「恢复」即可。</p>
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr><th>时间</th><th>版本</th><th>文件</th><th></th></tr></thead>
+              <tbody id="backups"><tr><td colspan="4" class="muted">暂无备份</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ advanced ============ -->
+      <section class="page hidden" data-page="advanced" data-config>
+        <header class="page-head"><h1>高级</h1></header>
+        <div class="card">
+          <h2>自定义环境变量</h2>
+          <p class="muted">每行一个 <code>KEY=VALUE</code>，会覆盖上面的设置。LDAP / SAML / OIDC 登录、Git 集成等 CE+ 功能都可以在这里配置，参见 <a href="https://github.com/yu-i-i/overleaf-cep/wiki" target="_blank" rel="noopener">CE+ Wiki</a>。</p>
+          <textarea data-k="extraEnv" rows="10" spellcheck="false" placeholder="# 例：OIDC 登录&#10;# EXTERNAL_AUTH=oidc&#10;# OVERLEAF_OIDC_ISSUER=https://accounts.example.com"></textarea>
+        </div>
+        <div class="card">
+          <h2>依赖镜像</h2>
+          <div class="grid">
+            <label class="field"><span>MongoDB</span><input data-k="images.mongo" /></label>
+            <label class="field"><span>Redis</span><input data-k="images.redis" /></label>
+            <label class="field"><span>Cloudflared</span><input data-k="images.cloudflared" /></label>
+          </div>
+        </div>
+        <div class="card">
+          <h2>生成的 docker-compose.yml</h2>
+          <button class="btn small" type="button" id="compose-preview">预览（基于已保存的配置）</button>
+          <pre id="compose-text" class="console hidden"></pre>
+        </div>
+        <div class="card">
+          <h2>修改控制台密码</h2>
+          <form id="pw-form" class="inline-form">
+            <input id="pw-old" type="password" placeholder="原密码" required autocomplete="current-password" />
+            <input id="pw-new" type="password" placeholder="新密码（至少 6 位）" required minlength="6" autocomplete="new-password" />
+            <button class="btn" type="submit">修改</button>
+          </form>
+        </div>
+      </section>
+
+      <!-- sticky save bar for config pages -->
+      <div id="savebar" class="savebar hidden">
+        <span id="dirty-hint" class="muted">修改尚未保存</span>
+        <button class="btn" id="save">保存</button>
+        <button class="btn primary" id="save-apply">保存并应用</button>
+      </div>
+    </main>
+  </div>
+
+  <!-- job drawer -->
+  <div id="job" class="job hidden">
+    <div class="job-head">
+      <span class="dot" id="job-dot"></span>
+      <strong id="job-title"></strong>
+      <span class="muted" id="job-status"></span>
+      <span class="spacer"></span>
+      <button class="btn ghost small" id="job-toggle" type="button">收起</button>
+      <button class="btn ghost small" id="job-close" type="button">关闭</button>
+    </div>
+    <pre id="job-log" class="console"></pre>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+  <script src="/app.js" type="module"></script>
+</body>
+</html>

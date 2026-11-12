@@ -1,0 +1,18 @@
+# EasyOVL - only the web console runs from this file.
+# The console then generates and manages the Overleaf stack itself
+# (data/stack/docker-compose.yml, compose project "overleaf").
+name: easyovl
+
+services:
+  manager:
+    build: ./manager
+    image: easyovl-manager:latest
+    container_name: easyovl-manager
+    restart: unless-stopped
+    ports:
+      # console is only reachable from this computer by default;
+      # set EASYOVL_BIND=0.0.0.0 in .env to open it to your LAN
+      - "${EASYOVL_BIND:-127.0.0.1}:${EASYOVL_PORT:-8090}:8090"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./data:/data
