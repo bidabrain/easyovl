@@ -1,7 +1,57 @@
 // EasyOVL manager front-end (vanilla JS, no build step)
 
+import { LANGS, translate } from './i18n.js'
+
 const $ = (s, el = document) => el.querySelector(s)
 const $$ = (s, el = document) => [...el.querySelectorAll(s)]
+
+// ------------------------------------------------------------------ language
+
+const LANG_KEY = 'easyovl-lang'
+function detectLang() {
+  try {
+    const saved = localStorage.getItem(LANG_KEY)
+    if (LANGS.includes(saved)) return saved
+  } catch {}
+  return /^zh\b/i.test(navigator.language || '') ? 'zh' : 'en'
+}
+const LANG = detectLang()
+/** Translate a Chinese source string; {name} placeholders come from vars. */
+const t = (s, vars) => translate(LANG, s, vars)
+
+/** Translate the static page once (Chinese is the source language). */
+function translatePage() {
+  document.documentElement.lang = LANG === 'en' ? 'en' : 'zh-CN'
+  document.title = t('EasyOVL 控制台')
+  if (LANG === 'zh') return
+  const norm = v => v.replace(/\s+/g, ' ').trim()
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT)
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    const key = norm(node.nodeValue)
+    if (!key || !/[\u4e00-\u9fff]/.test(key)) continue
+    const out = t(key)
+    if (out === key) continue
+    // keep the surrounding spaces so inline markup stays readable
+    const lead = /^\s/.test(node.nodeValue) ? ' ' : ''
+    const trail = /\s$/.test(node.nodeValue) ? ' ' : ''
+    node.nodeValue = lead + out + trail
+  }
+  for (const el of $$('[placeholder], [title], [aria-label]')) {
+    for (const attr of ['placeholder', 'title', 'aria-label']) {
+      const v = el.getAttribute(attr)
+      if (v && /[\u4e00-\u9fff]/.test(v)) el.setAttribute(attr, t(norm(v)))
+    }
+  }
+}
+translatePage()
+
+for (const b of $$('[data-lang-toggle]')) {
+  b.textContent = LANG === 'en' ? '中文' : 'English'
+  b.onclick = () => {
+    try { localStorage.setItem(LANG_KEY, LANG === 'en' ? 'zh' : 'en') } catch {}
+    location.reload()
+  }
+}
 
 // ------------------------------------------------------------------ api
 
@@ -10,6 +60,7 @@ async function api(path, { method = 'GET', body } = {}) {
     method,
     headers: {
       'X-Requested-With': 'easyovl',
+      'X-Lang': LANG,
       ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
     },
     body: body !== undefined ? JSON.stringify(body) : undefined,
@@ -20,7 +71,7 @@ async function api(path, { method = 'GET', body } = {}) {
   } catch {}
   if (res.status === 401 && path !== '/api/login') {
     showAuth(false)
-    throw new Error(data.error || '请先登录')
+    throw new Error(data.error || t('请先登录'))
   }
   if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
   return data
@@ -65,12 +116,12 @@ function showAuth(needsSetup) {
   $('#job').classList.add('hidden')
   $('#auth').classList.remove('hidden')
   $('#auth-hint').textContent = needsSetup
-    ? '首次使用，请设置控制台管理密码。'
-    : '请输入控制台管理密码。'
+    ? t('首次使用，请设置控制台管理密码。')
+    : t('请输入控制台管理密码。')
   $('#auth-pass2-wrap').classList.toggle('hidden', !needsSetup)
   $('#auth-pass2').required = needsSetup
   $('#auth-pass').autocomplete = needsSetup ? 'new-password' : 'current-password'
-  $('#auth-submit').textContent = needsSetup ? '设置密码并进入' : '登录'
+  $('#auth-submit').textContent = needsSetup ? t('设置密码并进入') : t('登录')
   $('#auth-pass').focus()
 }
 
@@ -80,7 +131,7 @@ $('#auth-form').onsubmit = async e => {
   const password = $('#auth-pass').value
   try {
     if (setupMode) {
-      if (password !== $('#auth-pass2').value) throw new Error('两次输入的密码不一致')
+      if (password !== $('#auth-pass2').value) throw new Error(t('两次输入的密码不一致'))
       await api('/api/setup', { method: 'POST', body: { password } })
     } else {
       await api('/api/login', { method: 'POST', body: { password } })
@@ -145,7 +196,7 @@ function fillForm() {
     else if (el.hasAttribute('data-secret')) {
       el.value = ''
       const [a, b] = el.dataset.k.split('.')
-      el.placeholder = config[a][`${b}Set`] ? '已设置（留空保持不变）' : ''
+      el.placeholder = config[a][`${b}Set`] ? t('已设置（留空保持不变）') : ''
     } else if (el.tagName === 'SELECT' && v && ![...el.options].some(o => o.value === v)) {
       // keep values for selects whose options are loaded later
       const isZone = el.id === 'cf-zone'
@@ -179,7 +230,7 @@ function readForm() {
 
 function setDirty(d) {
   dirty = d
-  $('#dirty-hint').textContent = d ? '修改尚未保存' : '所有修改已保存'
+  $('#dirty-hint').textContent = d ? t('修改尚未保存') : t('所有修改已保存')
   $('#save').disabled = !d
 }
 
@@ -201,9 +252,11 @@ function syncMongo(im) {
   if (!cpu) return (el.textContent = '')
   const avx = cpu.avx
   const used = im.mongoMode === 'noavx' || (im.mongoMode === 'auto' && !avx) ? im.mongoNoAvx : im.mongo
-  const warn = im.mongoMode === 'official' && !avx ? ' ⚠ 这台机器无法运行官方 MongoDB。' : ''
+  const warn = im.mongoMode === 'official' && !avx ? t(' ⚠ 这台机器无法运行官方 MongoDB。') : ''
   el.textContent =
-    `检测到 CPU：${cpu.model || '未知'}，${avx ? '支持' : '不支持'} AVX。当前将使用：${used}。${warn}`
+    t('检测到 CPU：{model}，{avx} AVX。当前将使用：{image}。{warn}', {
+      model: cpu.model || t('未知'), avx: avx ? t('支持') : t('不支持'), image: used, warn,
+    })
 }
 
 document.addEventListener('input', e => {
@@ -236,7 +289,7 @@ async function save(apply) {
     $('#site-url-effective').textContent = data.siteUrl
     cpu = data.cpu || cpu
     fillForm()
-    toast(apply ? '已保存，正在应用…' : '已保存')
+    toast(apply ? t('已保存，正在应用…') : t('已保存'))
     if (data.job) watchJob(data.job)
   } catch (err) {
     toast(err.message, true)
@@ -261,10 +314,10 @@ async function loadTags() {
     dl.innerHTML = ''
     for (const t of tags) dl.append(new Option(t.updated ? `${t.updated.slice(0, 10)}` : '', t.name))
     $('#tag-hint').textContent = tags.length
-      ? `最新版本：${tags[0].name}（点击输入框可选择）`
-      : `无法读取版本列表${error ? '：' + error : ''}`
+      ? t('最新版本：{name}（点击输入框可选择）', { name: tags[0].name })
+      : error ? t('无法读取版本列表：{error}', { error }) : t('无法读取版本列表')
   } catch {
-    $('#tag-hint').textContent = '无法读取版本列表'
+    $('#tag-hint').textContent = t('无法读取版本列表')
   }
 }
 
@@ -273,7 +326,7 @@ async function loadTags() {
 $('#cf-verify').onclick = async () => {
   const btn = $('#cf-verify')
   btn.disabled = true
-  $('#cf-msg').textContent = '正在验证…'
+  $('#cf-msg').textContent = t('正在验证…')
   try {
     const apiToken = $('[data-k="tunnel.apiToken"]').value
     const { accounts, zones } = await api('/api/cloudflare/verify', { method: 'POST', body: { apiToken } })
@@ -293,9 +346,11 @@ $('#cf-verify').onclick = async () => {
       zone.add(o)
     }
     if (zones.some(z => z.id === prevZone)) zone.value = prevZone
-    if (!accounts.length) throw new Error('令牌看不到任何帐户，请检查「帐户设置 · 读取」权限')
-    if (!zones.length) throw new Error('令牌看不到任何域名，请检查「区域 · 区域 · 读取」权限，并确认域名已接入 Cloudflare')
-    $('#cf-msg').textContent = `验证成功：${accounts.length} 个帐户，${zones.length} 个域名。选择后点击「保存并应用」。`
+    if (!accounts.length) throw new Error(t('令牌看不到任何帐户，请检查「帐户设置 · 读取」权限'))
+    if (!zones.length) throw new Error(t('令牌看不到任何域名，请检查「区域 · 区域 · 读取」权限，并确认域名已接入 Cloudflare'))
+    $('#cf-msg').textContent = t('验证成功：{accounts} 个帐户，{zones} 个域名。选择后点击「保存并应用」。', {
+      accounts: accounts.length, zones: zones.length,
+    })
     setDirty(true)
     syncVisibility()
   } catch (err) {
@@ -314,8 +369,8 @@ $('#cf-zone').addEventListener('change', () => {
 // ------------------------------------------------------------------ status
 
 let lastStatus = null
-const STATE_TEXT = { running: '运行中', exited: '已停止', created: '已创建', restarting: '重启中', paused: '已暂停', dead: '异常' }
-const SERVICE_NAME = { sharelatex: 'Overleaf', mongo: 'MongoDB', 'mongo-init': 'MongoDB 初始化', redis: 'Redis', cloudflared: 'Cloudflared' }
+const STATE_TEXT = { running: t('运行中'), exited: t('已停止'), created: t('已创建'), restarting: t('重启中'), paused: t('已暂停'), dead: t('异常') }
+const SERVICE_NAME = { sharelatex: 'Overleaf', mongo: 'MongoDB', 'mongo-init': t('MongoDB 初始化'), redis: 'Redis', cloudflared: 'Cloudflared' }
 
 function dot(cls) {
   return `<span class="dot ${cls}"></span>`
@@ -333,38 +388,41 @@ async function refreshStatus() {
   // docker
   $('#docker-warning').classList.toggle('hidden', s.docker.ok)
   if (!s.docker.ok) {
-    $('#docker-warning').innerHTML = `无法连接 Docker：<code>${esc(s.docker.error || '未知错误')}</code><br>请确认 Docker Desktop 已启动，并且控制台容器挂载了 <code>/var/run/docker.sock</code>。`
+    $('#docker-warning').innerHTML = t(
+      '无法连接 Docker：<code>{error}</code><br>请确认 Docker Desktop 已启动，并且控制台容器挂载了 <code>/var/run/docker.sock</code>。',
+      { error: esc(s.docker.error || t('未知错误')) }
+    )
   }
-  $('#st-docker').innerHTML = s.docker.ok ? `${dot('ok')}已连接` : `${dot('bad')}未连接`
+  $('#st-docker').innerHTML = s.docker.ok ? `${dot('ok')}${t('已连接')}` : `${dot('bad')}${t('未连接')}`
   $('#st-docker-sub').textContent = s.docker.ok ? `Docker ${s.docker.version}` : ''
 
   // overleaf
   const ol = s.containers.find(c => c.service === 'sharelatex')
   let olHtml
-  if (!ol) olHtml = `${dot('')}未部署`
+  if (!ol) olHtml = `${dot('')}${t('未部署')}`
   else if (ol.state !== 'running') olHtml = `${dot('bad')}${STATE_TEXT[ol.state] || ol.state}`
-  else if (s.overleaf.reachable) olHtml = `${dot('ok')}运行中`
-  else olHtml = `${dot('busy')}正在启动…`
+  else if (s.overleaf.reachable) olHtml = `${dot('ok')}${t('运行中')}`
+  else olHtml = `${dot('busy')}${t('正在启动…')}`
   $('#st-overleaf').innerHTML = olHtml
   $('#st-image').textContent = s.image
 
   // tunnel
-  const t = s.tunnel
-  const modeText = { off: '已关闭', quick: '快速隧道', token: '隧道令牌', api: '自动配置' }[t.mode]
-  if (t.mode === 'off') $('#st-tunnel').innerHTML = `${dot('')}已关闭`
-  else $('#st-tunnel').innerHTML = t.running ? `${dot('ok')}${modeText}` : `${dot('bad')}${modeText}（未运行）`
-  $('#st-tunnel-sub').textContent = t.publicUrl || ''
-  $('#quick-url').textContent = t.mode === 'quick' && t.publicUrl ? t.publicUrl : '（启动后显示）'
-  if (t.publicUrl && t.mode === 'quick') $('#quick-url').href = t.publicUrl
-  $('#stale-hint').classList.toggle('hidden', !t.quickUrlStale)
+  const tun = s.tunnel
+  const modeText = { off: t('已关闭'), quick: t('快速隧道'), token: t('隧道令牌'), api: t('自动配置') }[tun.mode]
+  if (tun.mode === 'off') $('#st-tunnel').innerHTML = `${dot('')}${t('已关闭')}`
+  else $('#st-tunnel').innerHTML = tun.running ? `${dot('ok')}${modeText}` : `${dot('bad')}${modeText}${t('（未运行）')}`
+  $('#st-tunnel-sub').textContent = tun.publicUrl || ''
+  $('#quick-url').textContent = tun.mode === 'quick' && tun.publicUrl ? tun.publicUrl : t('（启动后显示）')
+  if (tun.publicUrl && tun.mode === 'quick') $('#quick-url').href = tun.publicUrl
+  $('#stale-hint').classList.toggle('hidden', !tun.quickUrlStale)
 
   // links
   const host = location.hostname
   const local = `http://${host.includes(':') ? `[${host}]` : host}:${s.port}`
-  const rows = [['本机', local]]
-  if (host !== 'localhost' && host !== '127.0.0.1') rows.unshift(['本机', `http://localhost:${s.port}`])
-  if (t.publicUrl) rows.push(['公网', t.publicUrl])
-  rows.push(['站点地址', s.siteUrl])
+  const rows = [[t('本机'), local]]
+  if (host !== 'localhost' && host !== '127.0.0.1') rows.unshift([t('本机'), `http://localhost:${s.port}`])
+  if (tun.publicUrl) rows.push([t('公网'), tun.publicUrl])
+  rows.push([t('站点地址'), s.siteUrl])
   $('#links').innerHTML = rows
     .filter((r, i, a) => a.findIndex(x => x[1] === r[1]) === i)
     .map(([k, u]) => `<div class="link-row"><span class="tag">${k}</span><a href="${esc(u)}" target="_blank" rel="noopener">${esc(u)}</a></div>`)
@@ -375,13 +433,15 @@ async function refreshStatus() {
   const needsAdmin = s.overleaf.reachable && s.overleaf.needsAdmin
   $('#admin-hint').classList.toggle('hidden', !needsAdmin)
   if (needsAdmin) {
-    $('#admin-hint').innerHTML = `Overleaf 已就绪！还没有管理员账号，请打开 <a href="${esc(local)}/launchpad" target="_blank" rel="noopener">${esc(local)}/launchpad</a> 创建第一个管理员。`
+    $('#admin-hint').innerHTML = t('Overleaf 已就绪！还没有管理员账号，请打开 {link} 创建第一个管理员。', {
+      link: `<a href="${esc(local)}/launchpad" target="_blank" rel="noopener">${esc(local)}/launchpad</a>`,
+    })
   }
 
   // containers
   const tbody = $('#containers')
   if (!s.containers.length) {
-    tbody.innerHTML = '<tr><td colspan="4" class="muted">尚未创建容器</td></tr>'
+    tbody.innerHTML = `<tr><td colspan="4" class="muted">${t('尚未创建容器')}</td></tr>`
   } else {
     tbody.innerHTML = s.containers
       .map(c => {
@@ -392,18 +452,18 @@ async function refreshStatus() {
         if (oneShot && c.state === 'exited') {
           const ok = c.exitCode === 0 || /\(0\)/.test(c.status || '')
           cls = ok ? 'ok' : 'bad'
-          text = ok ? '已完成（一次性任务，退出是正常的）' : `初始化失败：${c.status}`
+          text = ok ? t('已完成（一次性任务，退出是正常的）') : t('初始化失败：{status}', { status: c.status })
         } else if (oneShot && c.state === 'running') {
           cls = 'busy'
-          text = '正在初始化数据库…'
+          text = t('正在初始化数据库…')
         }
         return `<tr>
           <td><strong>${esc(SERVICE_NAME[c.service] || c.service)}</strong></td>
           <td><span class="pill">${dot(cls)}${esc(text)}</span></td>
           <td class="muted">${esc(c.image)}</td>
           <td style="white-space:nowrap">
-            <button class="btn small" data-svc-action="restart" data-svc="${esc(c.service)}">${oneShot ? '重新运行' : '重启'}</button>
-            <button class="btn small" data-svc-log="${esc(c.service)}">日志</button>
+            <button class="btn small" data-svc-action="restart" data-svc="${esc(c.service)}">${oneShot ? t('重新运行') : t('重启')}</button>
+            <button class="btn small" data-svc-log="${esc(c.service)}">${t('日志')}</button>
           </td></tr>`
       })
       .join('')
@@ -416,11 +476,11 @@ document.addEventListener('click', async e => {
   const a = e.target.closest('[data-action]')
   if (a) {
     const action = a.dataset.action
-    if (action === 'down' && !confirm('移除全部容器？数据卷会保留，之后可以重新启动。')) return
-    if (action === 'stop' && !confirm('停止 Overleaf？正在编辑的用户会断开连接。')) return
+    if (action === 'down' && !confirm(t('移除全部容器？数据卷会保留，之后可以重新启动。'))) return
+    if (action === 'stop' && !confirm(t('停止 Overleaf？正在编辑的用户会断开连接。'))) return
     try {
       if (action === 'apply') {
-        if (dirty && !confirm('有未保存的修改，是否先保存再应用？')) return
+        if (dirty && !confirm(t('有未保存的修改，是否先保存再应用？'))) return
         if (dirty) return save(true)
         const { job } = await api('/api/apply', { method: 'POST', body: {} })
         watchJob(job)
@@ -460,7 +520,7 @@ function watchJob(id) {
   $('#job').classList.remove('hidden', 'min')
   document.body.classList.add('job-open')
   document.body.classList.remove('job-min')
-  $('#job-toggle').textContent = '收起'
+  $('#job-toggle').textContent = t('收起')
   pollJob()
 }
 
@@ -474,13 +534,13 @@ async function pollJob() {
     if (j.lines.length) pre.textContent += j.lines.join('\n') + '\n'
     if (atBottom) pre.scrollTop = pre.scrollHeight
     $('#job-title').textContent = j.title
-    $('#job-status').textContent = { running: '进行中…', success: '已完成', failed: '失败' }[j.status]
+    $('#job-status').textContent = { running: t('进行中…'), success: t('已完成'), failed: t('失败') }[j.status]
     $('#job-dot').className = 'dot ' + ({ running: 'busy', success: 'ok', failed: 'bad' }[j.status])
     if (j.status === 'running') {
       jobTimer = setTimeout(pollJob, 1000)
     } else {
-      if (j.status === 'failed') toast(`${j.title}：失败，请查看日志`, true)
-      else toast(`${j.title}：完成`)
+      if (j.status === 'failed') toast(t('{title}：失败，请查看日志', { title: j.title }), true)
+      else toast(t('{title}：完成', { title: j.title }))
       refreshStatus()
       if (currentPage === 'backups') loadBackups()
     }
@@ -496,7 +556,7 @@ $('#job-close').onclick = () => {
 $('#job-toggle').onclick = () => {
   const min = $('#job').classList.toggle('min')
   document.body.classList.toggle('job-min', min)
-  $('#job-toggle').textContent = min ? '展开' : '收起'
+  $('#job-toggle').textContent = min ? t('展开') : t('收起')
 }
 
 // ------------------------------------------------------------------ users
@@ -509,17 +569,17 @@ async function loadUsers() {
     const { users } = await api('/api/users')
     userList = users
     if (!users.length) {
-      tbody.innerHTML = '<tr><td colspan="6" class="muted">还没有用户</td></tr>'
+      tbody.innerHTML = `<tr><td colspan="6" class="muted">${t('还没有用户')}</td></tr>`
       return
     }
     const d = v => (v ? new Date(v).toLocaleString() : '—')
     tbody.innerHTML = users
       .map(
         u => `<tr data-email="${esc(u.email)}"><td>${esc(u.email)}</td><td>${esc([u.first_name, u.last_name].filter(Boolean).join(' ') || '—')}</td>
-        <td>${u.isAdmin ? '<span class="badge">管理员</span>' : '用户'}</td><td>${d(u.signUpDate)}</td><td>${d(u.lastLoggedIn)}</td>
+        <td>${u.isAdmin ? `<span class="badge">${t('管理员')}</span>` : t('用户')}</td><td>${d(u.signUpDate)}</td><td>${d(u.lastLoggedIn)}</td>
         <td class="user-actions">
-          <button class="btn small" type="button" data-user-link>密码链接</button>
-          <button class="btn small danger-outline" type="button" data-user-del>删除</button>
+          <button class="btn small" type="button" data-user-link>${t('密码链接')}</button>
+          <button class="btn small danger-outline" type="button" data-user-del>${t('删除')}</button>
         </td></tr>`
       )
       .join('')
@@ -537,13 +597,13 @@ function showUserResult(html) {
 }
 
 function linkHtml(r, email, verb) {
-  let html = `<strong>${verb} ${esc(email)}</strong><br>`
+  let html = `<strong>${t(verb)} ${esc(email)}</strong><br>`
   if (r.setPasswordUrl) {
     const u = new URL(r.setPasswordUrl)
     const localUrl = `http://${location.hostname}:${lastStatus?.port || 8080}${u.pathname}${u.search}`
-    html += `设置密码链接（7 天内有效，发给对方）：<br><a href="${esc(r.setPasswordUrl)}" target="_blank" rel="noopener">${esc(r.setPasswordUrl)}</a>`
+    html += `${t('设置密码链接（7 天内有效，发给对方）：')}<br><a href="${esc(r.setPasswordUrl)}" target="_blank" rel="noopener">${esc(r.setPasswordUrl)}</a>`
     if (localUrl !== r.setPasswordUrl) {
-      html += `<br><span class="muted">本机访问：</span><a href="${esc(localUrl)}" target="_blank" rel="noopener">${esc(localUrl)}</a>`
+      html += `<br><span class="muted">${t('本机访问：')}</span><a href="${esc(localUrl)}" target="_blank" rel="noopener">${esc(localUrl)}</a>`
     }
   } else {
     html += `<pre class="console">${esc(r.output)}</pre>`
@@ -576,13 +636,13 @@ $('#users').addEventListener('click', async e => {
   // step 1: inline confirmation, with an option to keep the projects
   if (e.target.closest('[data-user-del]')) {
     const others = userList.filter(u => u.email !== email)
-    const opts = others.map(u => `<option value="${esc(u.email)}">项目转给 ${esc(u.email)}</option>`).join('')
+    const opts = others.map(u => `<option value="${esc(u.email)}">${t('项目转给 {email}', { email: esc(u.email) })}</option>`).join('')
     cell.innerHTML = `
-      <select data-transfer title="该用户的项目如何处理">
-        <option value="">项目一并删除</option>${opts}
+      <select data-transfer title="${t('该用户的项目如何处理')}">
+        <option value="">${t('项目一并删除')}</option>${opts}
       </select>
-      <button class="btn small danger-outline" type="button" data-user-del-confirm>确认删除</button>
-      <button class="btn small" type="button" data-user-del-cancel>取消</button>`
+      <button class="btn small danger-outline" type="button" data-user-del-confirm>${t('确认删除')}</button>
+      <button class="btn small" type="button" data-user-del-cancel>${t('取消')}</button>`
     return
   }
   if (e.target.closest('[data-user-del-cancel]')) return loadUsers()
@@ -590,13 +650,16 @@ $('#users').addEventListener('click', async e => {
   // step 2: delete
   if (e.target.closest('[data-user-del-confirm]')) {
     const transferTo = cell.querySelector('[data-transfer]').value
-    const what = transferTo ? `项目将转给 ${transferTo}` : '该用户的所有项目也会被删除'
-    if (!confirm(`确定删除用户 ${email}？\n${what}。`)) return
+    const what = transferTo ? t('项目将转给 {email}', { email: transferTo }) : t('该用户的所有项目也会被删除')
+    if (!confirm(t('确定删除用户 {email}？\n{what}。', { email, what }))) return
     cell.querySelectorAll('button, select').forEach(el => (el.disabled = true))
     try {
       await api('/api/users', { method: 'DELETE', body: { email, transferTo } })
-      toast(`已删除 ${email}`)
-      showUserResult(`<strong>已删除 ${esc(email)}</strong>${transferTo ? `，项目已转给 ${esc(transferTo)}` : ''}`)
+      toast(t('已删除 {email}', { email }))
+      showUserResult(
+        `<strong>${t('已删除 {email}', { email: esc(email) })}</strong>` +
+          (transferTo ? esc(t('，项目已转给 {email}', { email: transferTo })) : '')
+      )
     } catch (err) {
       showUserResult(`<span class="error">${esc(err.message)}</span>`)
     }
@@ -661,7 +724,7 @@ async function loadBackups() {
   try {
     const { backups } = await api('/api/backups')
     if (!backups.length) {
-      tbody.innerHTML = '<tr><td colspan="4" class="muted">暂无备份</td></tr>'
+      tbody.innerHTML = `<tr><td colspan="4" class="muted">${t('暂无备份')}</td></tr>`
       return
     }
     tbody.innerHTML = backups
@@ -674,8 +737,8 @@ async function loadBackups() {
           .map(f => `<a href="/api/backups/${encodeURIComponent(b.name)}/${encodeURIComponent(f.name)}">${esc(f.name)}</a> <span class="muted">${fmtSize(f.size)}</span>`)
           .join('<br>')}</td>
         <td style="white-space:nowrap">
-          <button class="btn small" data-restore="${esc(b.name)}">恢复</button>
-          <button class="btn small danger-outline" data-del-backup="${esc(b.name)}">删除</button>
+          <button class="btn small" data-restore="${esc(b.name)}">${t('恢复')}</button>
+          <button class="btn small danger-outline" data-del-backup="${esc(b.name)}">${t('删除')}</button>
         </td></tr>`
       )
       .join('')
@@ -696,7 +759,7 @@ $('#backup-create').onclick = async () => {
 document.addEventListener('click', async e => {
   const r = e.target.closest('[data-restore]')
   if (r) {
-    if (!confirm(`用备份 ${r.dataset.restore} 覆盖当前全部数据？\n\n当前的数据库和项目文件会被替换，无法撤销。建议先做一次新备份。`)) return
+    if (!confirm(t('用备份 {name} 覆盖当前全部数据？\n\n当前的数据库和项目文件会被替换，无法撤销。建议先做一次新备份。', { name: r.dataset.restore }))) return
     try {
       const { job } = await api(`/api/backups/${encodeURIComponent(r.dataset.restore)}/restore`, { method: 'POST', body: {} })
       watchJob(job)
@@ -706,7 +769,7 @@ document.addEventListener('click', async e => {
   }
   const d = e.target.closest('[data-del-backup]')
   if (d) {
-    if (!confirm(`永久删除备份 ${d.dataset.delBackup}？此操作无法撤销。`)) return
+    if (!confirm(t('永久删除备份 {name}？此操作无法撤销。', { name: d.dataset.delBackup }))) return
     try {
       await api(`/api/backups/${encodeURIComponent(d.dataset.delBackup)}`, { method: 'DELETE' })
       loadBackups()
@@ -736,7 +799,7 @@ $('#pw-form').onsubmit = async e => {
       method: 'POST',
       body: { oldPassword: $('#pw-old').value, newPassword: $('#pw-new').value },
     })
-    toast('密码已修改，请重新登录')
+    toast(t('密码已修改，请重新登录'))
     setTimeout(() => location.reload(), 1200)
   } catch (err) {
     toast(err.message, true)

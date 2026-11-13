@@ -261,3 +261,6 @@ body.job-open.job-min .savebar { bottom: 66px; }
 /* users table: per-row actions and inline delete confirmation */
 .user-actions { white-space: nowrap; text-align: right; }
 .user-actions select { width: auto; max-width: 220px; padding: 4px 8px; margin-right: 4px; }
+
+/* language switch on the sign-in card */
+.auth-card .lang-toggle { display: block; margin: 12px auto 0; }

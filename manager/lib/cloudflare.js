@@ -1,4 +1,5 @@
 import crypto from 'node:crypto'
+import { t } from './lang.js'
 
 const API = 'https://api.cloudflare.com/client/v4'
 
@@ -15,17 +16,17 @@ async function cf(token, method, path, body) {
       signal: AbortSignal.timeout(20000),
     })
   } catch (err) {
-    throw new Error(`无法连接 Cloudflare API：${err.message}`)
+    throw new Error(t('无法连接 Cloudflare API：{error}', { error: err.message }))
   }
   let data
   try {
     data = await res.json()
   } catch {
-    throw new Error(`Cloudflare API 返回了无效响应 (HTTP ${res.status})`)
+    throw new Error(t('Cloudflare API 返回了无效响应 (HTTP {status})', { status: res.status }))
   }
   if (!data.success) {
     const msg = (data.errors || []).map(e => `${e.code}: ${e.message}`).join('; ')
-    throw new Error(`Cloudflare API 错误：${msg || 'HTTP ' + res.status}`)
+    throw new Error(t('Cloudflare API 错误：{error}', { error: msg || 'HTTP ' + res.status }))
   }
   return data.result
 }
@@ -46,7 +47,7 @@ export async function verifyToken(token) {
  */
 export async function ensureTunnel({ token, accountId, zoneId, hostname, tunnelName, tunnelId }, log = () => {}) {
   if (!token || !accountId || !zoneId || !hostname) {
-    throw new Error('Cloudflare 配置不完整（需要 API Token、账户、域名和子域名）')
+    throw new Error(t('Cloudflare 配置不完整（需要 API Token、账户、域名和子域名）'))
   }
   const acc = `/accounts/${accountId}/cfd_tunnel`
 
@@ -68,18 +69,18 @@ export async function ensureTunnel({ token, accountId, zoneId, hostname, tunnelN
     tunnel = found[0] || null
   }
   if (tunnel) {
-    log(`使用已有隧道 ${tunnel.name} (${tunnel.id})`)
+    log(t('使用已有隧道 {name} ({id})', { name: tunnel.name, id: tunnel.id }))
   } else {
-    log(`创建隧道 ${tunnelName} ...`)
+    log(t('创建隧道 {name} ...', { name: tunnelName }))
     tunnel = await cf(token, 'POST', acc, {
       name: tunnelName,
       config_src: 'cloudflare',
       tunnel_secret: crypto.randomBytes(32).toString('base64'),
     })
-    log(`隧道已创建 (${tunnel.id})`)
+    log(t('隧道已创建 ({id})', { id: tunnel.id }))
   }
 
-  log(`配置隧道入口：${hostname} → http://sharelatex:80`)
+  log(t('配置隧道入口：{hostname} → http://sharelatex:80', { hostname }))
   await cf(token, 'PUT', `${acc}/${tunnel.id}/configurations`, {
     config: {
       ingress: [
@@ -99,16 +100,16 @@ export async function ensureTunnel({ token, accountId, zoneId, hostname, tunnelN
   if (existing.length) {
     const r = existing[0]
     if (r.type !== 'CNAME' && existing.length) {
-      throw new Error(`${hostname} 已存在 ${r.type} 记录，请先在 Cloudflare 删除它或换一个子域名`)
+      throw new Error(t('{hostname} 已存在 {type} 记录，请先在 Cloudflare 删除它或换一个子域名', { hostname, type: r.type }))
     }
     if (r.content !== target || !r.proxied) {
-      log(`更新 DNS 记录 ${hostname}`)
+      log(t('更新 DNS 记录 {hostname}', { hostname }))
       await cf(token, 'PUT', `/zones/${zoneId}/dns_records/${r.id}`, record)
     } else {
-      log(`DNS 记录 ${hostname} 已正确`)
+      log(t('DNS 记录 {hostname} 已正确', { hostname }))
     }
   } else {
-    log(`创建 DNS 记录 ${hostname} → ${target}`)
+    log(t('创建 DNS 记录 {hostname} → {target}', { hostname, target }))
     await cf(token, 'POST', `/zones/${zoneId}/dns_records`, record)
   }
 

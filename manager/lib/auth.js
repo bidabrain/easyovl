@@ -2,6 +2,7 @@ import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import { DATA_DIR } from './config.js'
+import { t } from './lang.js'
 
 const AUTH_FILE = path.join(DATA_DIR, 'auth.json')
 const SESSION_TTL = 7 * 24 * 3600 * 1000
@@ -21,7 +22,7 @@ export function hasPassword() {
 
 export function setPassword(password) {
   if (typeof password !== 'string' || password.length < 6) {
-    throw Object.assign(new Error('密码至少 6 位'), { status: 400 })
+    throw Object.assign(new Error(t('密码至少 6 位')), { status: 400 })
   }
   const salt = crypto.randomBytes(16).toString('hex')
   const hash = crypto.scryptSync(password, salt, 64).toString('hex')

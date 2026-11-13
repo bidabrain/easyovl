@@ -6,9 +6,12 @@
 - 🚀 **一条命令启动**：控制台自动生成并管理 Overleaf + MongoDB + Redis（+ cloudflared）
 - 🌐 **外网访问三种方式**：快速隧道（无需账号）、自动配置（填 API Token 自动建隧道和 DNS）、隧道令牌
 - 📦 **沙盒编译**：可选每次编译在独立的 TeX Live 容器中运行，宏包齐全
-- 👤 **用户管理**：查看用户、创建用户 / 管理员
+- 👤 **用户管理**：查看、创建、删除用户（可先把项目转给别人），随时重新生成设置密码链接
 - 💾 **备份与恢复**：一键备份数据库和项目文件，迁移到新电脑也方便
 - 📜 **日志查看**、版本升级（从 Docker Hub 读取可用版本）
+- 🌏 **中文 / English**：控制台界面、任务日志和错误提示都支持中英文，默认跟随浏览器语言，左下角可切换
+
+> **English:** EasyOVL is a web console that deploys [Overleaf CE+](https://github.com/yu-i-i/overleaf-cep) with Docker and publishes it through Cloudflare Tunnel. The console UI is available in English (it follows your browser language; switch at the bottom left). Quick start: download [`docker-compose.yml`](docker-compose.yml) into an empty folder, run `docker compose up -d`, then open `http://<host>:8090`.
 
 ## 快速开始
 

@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import { NETWORK, PROJECT } from './config.js'
 import { COMPOSE_FILE } from './compose.js'
+import { t } from './lang.js'
 
 const DOCKER = process.env.DOCKER_BIN || 'docker'
 
@@ -83,7 +84,7 @@ export function listJobs() {
  */
 export function startJob(title, fn) {
   if (currentJob()) {
-    const err = new Error(`已有任务正在运行：${activeJob.title}`)
+    const err = new Error(t('已有任务正在运行：{title}', { title: activeJob.title }))
     err.status = 409
     throw err
   }
@@ -122,7 +123,7 @@ export function startJob(title, fn) {
       child.on('error', err => log(err.message))
       child.on('close', code => {
         if (code === 0 || allowFail) resolve(code)
-        else reject(new Error(`命令失败 (exit ${code})`))
+        else reject(new Error(t('命令失败 (exit {code})', { code })))
       })
     })
 
@@ -131,7 +132,7 @@ export function startJob(title, fn) {
     .then(
       () => {
         job.status = 'success'
-        log('✔ 完成')
+        log(t('✔ 完成'))
       },
       err => {
         job.status = 'failed'

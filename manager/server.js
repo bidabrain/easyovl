@@ -38,6 +38,7 @@ import {
   startJob,
 } from './lib/docker.js'
 import * as auth from './lib/auth.js'
+import { setLangFromRequest, t } from './lib/lang.js'
 import { ensureTunnel, verifyToken } from './lib/cloudflare.js'
 
 const PORT = Number(process.env.PORT || 8090)
@@ -65,19 +66,19 @@ function send(res, status, body, headers = {}) {
 
 async function readJson(req) {
   if (!/application\/json/.test(req.headers['content-type'] || '')) {
-    throw new HttpError(415, '需要 application/json')
+    throw new HttpError(415, t('需要 application/json'))
   }
   let size = 0
   const chunks = []
   for await (const c of req) {
     size += c.length
-    if (size > 1024 * 1024) throw new HttpError(413, '请求过大')
+    if (size > 1024 * 1024) throw new HttpError(413, t('请求过大'))
     chunks.push(c)
   }
   try {
     return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}')
   } catch {
-    throw new HttpError(400, 'JSON 格式错误')
+    throw new HttpError(400, t('JSON 格式错误'))
   }
 }
 
@@ -131,9 +132,9 @@ async function detectQuickUrl() {
 const EMAIL_RE = /^[^\s@"'`$\\]+@[^\s@"'`$\\]+\.[^\s@"'`$\\]+$/
 
 function safeBackupName(name) {
-  if (!/^[0-9A-Za-z_-]+$/.test(name)) throw new HttpError(400, '无效的备份名')
+  if (!/^[0-9A-Za-z_-]+$/.test(name)) throw new HttpError(400, t('无效的备份名'))
   const dir = path.join(BACKUP_DIR, name)
-  if (!fs.existsSync(dir)) throw new HttpError(404, '备份不存在')
+  if (!fs.existsSync(dir)) throw new HttpError(404, t('备份不存在'))
   return dir
 }
 
@@ -181,29 +182,29 @@ async function ensureFullTexlive(cfg, { log, step }) {
     { timeout: 60000 }
   )
   if (r.code === 0 && r.stdout.trim() === img) {
-    log(`完整版 TeX Live 已就绪（${img}）`)
+    log(t('完整版 TeX Live 已就绪（{image}）', { image: img }))
     return
   }
 
   const hadImage = await imageExists(img)
   if (!hadImage) {
-    log(`下载 TeX Live 镜像 ${img}（完整版约 5GB，首次需要较长时间）`)
+    log(t('下载 TeX Live 镜像 {image}（完整版约 5GB，首次需要较长时间）', { image: img }))
     await step(['pull', img])
   }
   // the old Overleaf container may still be using the volume
   await step(['rm', '-f', CONTAINERS.sharelatex], { allowFail: true })
-  log('正在把 TeX Live 复制到数据卷（约 5~10 分钟，取决于硬盘速度）...')
+  log(t('正在把 TeX Live 复制到数据卷（约 5~10 分钟，取决于硬盘速度）...'))
   await step(
     [
       'run', '--rm', '-e', `IMG=${img}`, '-v', `${vol}:/t`, '--entrypoint', 'sh', img, '-c',
       `find /t -mindepth 1 -delete && cp -a /usr/local/texlive/. /t/ && printf '%s' "$IMG" > /t/${TEXLIVE_MARKER}` +
-        ` && echo "已复制：$(ls /t | tr '\\n' ' ')" && du -sh /t`,
+        ` && echo "copied: $(ls /t | tr '\\n' ' ')" && du -sh /t`,
     ],
-    { label: `复制 ${img} 中的 /usr/local/texlive 到卷 ${vol}` }
+    { label: t('复制 {image} 中的 /usr/local/texlive 到卷 {volume}', { image: img, volume: vol }) }
   )
   // sandbox is off on this path, so nothing else needs the image
   if (!hadImage) {
-    log('删除 TeX Live 镜像以节省磁盘空间（内容已在数据卷中）')
+    log(t('删除 TeX Live 镜像以节省磁盘空间（内容已在数据卷中）'))
     await step(['image', 'rm', img], { allowFail: true })
   }
 }
@@ -218,11 +219,11 @@ function logMongoChoice(cfg, log) {
   const cpu = cpuInfo()
   const mode = cfg.images.mongoMode
   if (mode === 'auto' && img !== cfg.images.mongo) {
-    log(`CPU（${cpu.model || '未知'}）不支持 AVX，官方 MongoDB 无法运行，自动改用无 AVX 版本：${img}`)
+    log(t('CPU（{model}）不支持 AVX，官方 MongoDB 无法运行，自动改用无 AVX 版本：{image}', { model: cpu.model || t('未知'), image: img }))
   } else if (mode === 'noavx') {
-    log(`使用无 AVX 版本的 MongoDB：${img}`)
+    log(t('使用无 AVX 版本的 MongoDB：{image}', { image: img }))
   } else if (!cpu.avx) {
-    log(`⚠ CPU（${cpu.model || '未知'}）不支持 AVX，${img} 很可能无法启动。可在「高级 → MongoDB」改为“自动”或“无 AVX 版本”。`)
+    log(t('⚠ CPU（{model}）不支持 AVX，{image} 很可能无法启动。可在「高级 → MongoDB」改为“自动”或“无 AVX 版本”。', { model: cpu.model || t('未知'), image: img }))
   }
 }
 
@@ -231,13 +232,13 @@ async function logContainerTails(log) {
   for (const name of [CONTAINERS.mongo, CONTAINERS.mongoInit, CONTAINERS.sharelatex]) {
     const st = await run(['inspect', '--format', '{{.State.Status}} exit={{.State.ExitCode}} restarts={{.RestartCount}}', name], { timeout: 10000 })
     if (st.code !== 0) continue
-    log(`---- ${name}（${st.stdout.trim()}）最近日志 ----`)
+    log(t('---- {name}（{state}）最近日志 ----', { name, state: st.stdout.trim() }))
     const r = await run(['logs', '--tail', '40', name], { timeout: 15000 })
-    log((r.stdout + r.stderr).trim() || '(无日志)')
+    log((r.stdout + r.stderr).trim() || t('(无日志)'))
   }
 }
 
-function startApplyJob(title = '应用配置并启动') {
+function startApplyJob(title = t('应用配置并启动')) {
   return startJob(title, async ({ log, step }) => {
     let cfg = loadConfig()
     logMongoChoice(cfg, log)
@@ -245,15 +246,15 @@ function startApplyJob(title = '应用配置并启动') {
     await detectDockerRoot()
 
     if (cfg.tunnel.mode === 'api') {
-      const t = cfg.tunnel
+      const tn = cfg.tunnel
       const result = await ensureTunnel(
         {
-          token: t.apiToken,
-          accountId: t.accountId,
-          zoneId: t.zoneId,
+          token: tn.apiToken,
+          accountId: tn.accountId,
+          zoneId: tn.zoneId,
           hostname: tunnelHostname(cfg),
-          tunnelName: t.tunnelName || 'easyovl',
-          tunnelId: t.tunnelId,
+          tunnelName: tn.tunnelName || 'easyovl',
+          tunnelId: tn.tunnelId,
         },
         log
       )
@@ -264,15 +265,15 @@ function startApplyJob(title = '应用配置并启动') {
     }
 
     writeCompose(cfg)
-    log(`已生成 compose 文件，站点地址：${effectiveSiteUrl(cfg)}`)
+    log(t('已生成 compose 文件，站点地址：{url}', { url: effectiveSiteUrl(cfg) }))
 
     if (cfg.compile.sandbox) {
       for (const img of texliveImages(cfg)) {
         if (await imageExists(img)) {
-          log(`TeX Live 镜像已存在：${img}`)
+          log(t('TeX Live 镜像已存在：{image}', { image: img }))
           continue
         }
-        log(`下载 TeX Live 镜像 ${img}（完整版约 5GB，首次需要较长时间）`)
+        log(t('下载 TeX Live 镜像 {image}（完整版约 5GB，首次需要较长时间）', { image: img }))
         await step(['pull', img])
       }
     }
@@ -285,7 +286,7 @@ function startApplyJob(title = '应用配置并启动') {
       await logContainerTails(log)
       throw err
     }
-    log('容器已启动。Overleaf 首次启动需要 1~3 分钟完成初始化。')
+    log(t('容器已启动。Overleaf 首次启动需要 1~3 分钟完成初始化。'))
   })
 }
 
@@ -301,7 +302,7 @@ route('GET', '/api/session', async req => ({
 }), { open: true })
 
 route('POST', '/api/setup', async (req, res) => {
-  if (auth.hasPassword()) throw new HttpError(403, '已设置过管理密码')
+  if (auth.hasPassword()) throw new HttpError(403, t('已设置过管理密码'))
   const { password } = await readJson(req)
   auth.setPassword(password)
   res.setHeader('Set-Cookie', auth.sessionCookie(auth.createSession()))
@@ -313,7 +314,7 @@ const loginAttempts = new Map()
 route('POST', '/api/login', async (req, res) => {
   const ip = req.socket.remoteAddress
   const a = loginAttempts.get(ip) || { n: 0, until: 0 }
-  if (a.until > Date.now()) throw new HttpError(429, '尝试次数过多，请稍后再试')
+  if (a.until > Date.now()) throw new HttpError(429, t('尝试次数过多，请稍后再试'))
   const { password } = await readJson(req)
   if (!auth.checkPassword(password)) {
     a.n += 1
@@ -322,7 +323,7 @@ route('POST', '/api/login', async (req, res) => {
       a.n = 0
     }
     loginAttempts.set(ip, a)
-    throw new HttpError(401, '密码错误')
+    throw new HttpError(401, t('密码错误'))
   }
   loginAttempts.delete(ip)
   res.setHeader('Set-Cookie', auth.sessionCookie(auth.createSession()))
@@ -338,7 +339,7 @@ route('POST', '/api/logout', async (req, res) => {
 
 route('POST', '/api/password', async req => {
   const { oldPassword, newPassword } = await readJson(req)
-  if (!auth.checkPassword(oldPassword)) throw new HttpError(400, '原密码错误')
+  if (!auth.checkPassword(oldPassword)) throw new HttpError(400, t('原密码错误'))
   auth.setPassword(newPassword)
   return { ok: true, relogin: true }
 })
@@ -392,22 +393,22 @@ const SERVICE_CONTAINERS = {
 route('POST', '/api/action', async req => {
   const { action, service } = await readJson(req)
   // an unknown service must not silently turn into "all services"
-  if (service && !(service in SERVICE_CONTAINERS)) throw new HttpError(400, '未知服务')
+  if (service && !(service in SERVICE_CONTAINERS)) throw new HttpError(400, t('未知服务'))
   const svc = service ? [service] : []
   const cfg = loadConfig()
   writeCompose(cfg)
   const table = {
-    start: ['启动服务', composeArgs('up', '-d', '--remove-orphans', ...svc)],
-    stop: ['停止服务', composeArgs('stop', ...svc)],
-    restart: ['重启服务', composeArgs('restart', ...svc)],
-    down: ['移除容器（保留数据）', composeArgs('down', '--remove-orphans')],
-    pull: ['拉取最新镜像', composeArgs('pull')],
+    start: [t('启动服务'), composeArgs('up', '-d', '--remove-orphans', ...svc)],
+    stop: [t('停止服务'), composeArgs('stop', ...svc)],
+    restart: [t('重启服务'), composeArgs('restart', ...svc)],
+    down: [t('移除容器（保留数据）'), composeArgs('down', '--remove-orphans')],
+    pull: [t('拉取最新镜像'), composeArgs('pull')],
   }
-  const t = table[action]
-  if (!t) throw new HttpError(400, '未知操作')
-  const job = startJob(svc.length ? `${t[0]}：${svc[0]}` : t[0], async ({ step }) => {
+  const act = table[action]
+  if (!act) throw new HttpError(400, t('未知操作'))
+  const job = startJob(svc.length ? t('{action}：{service}', { action: act[0], service: svc[0] }) : act[0], async ({ step }) => {
     await ensureNetwork()
-    await step(t[1])
+    await step(act[1])
   })
   return { job: job.id }
 })
@@ -465,17 +466,17 @@ route('GET', '/api/status', async () => {
 route('GET', '/api/logs', async (req, res, { query }) => {
   const service = query.get('service') || 'sharelatex'
   const name = SERVICE_CONTAINERS[service]
-  if (!name) throw new HttpError(400, '未知服务')
+  if (!name) throw new HttpError(400, t('未知服务'))
   const tail = Math.min(Math.max(Number(query.get('tail')) || 300, 10), 5000)
   const r = await run(['logs', '--tail', String(tail), '--timestamps', name], { timeout: 15000 })
-  return { text: (r.stdout + r.stderr) || '(暂无日志)', ok: r.code === 0 }
+  return { text: (r.stdout + r.stderr) || t('(暂无日志)'), ok: r.code === 0 }
 })
 
 route('GET', '/api/jobs', async () => ({ jobs: listJobs(), current: currentJob()?.id || null }))
 
 route('GET', /^\/api\/jobs\/(\d+)$/, async (req, res, { params, query }) => {
   const job = getJob(params[0])
-  if (!job) throw new HttpError(404, '任务不存在')
+  if (!job) throw new HttpError(404, t('任务不存在'))
   const since = Number(query.get('since')) || 0
   return {
     id: job.id,
@@ -508,7 +509,7 @@ route('GET', '/api/tags', async () => {
 route('POST', '/api/cloudflare/verify', async req => {
   const body = await readJson(req)
   const token = body.apiToken || loadConfig().tunnel.apiToken
-  if (!token) throw new HttpError(400, '请先填写 Cloudflare API Token')
+  if (!token) throw new HttpError(400, t('请先填写 Cloudflare API Token'))
   return verifyToken(token)
 })
 
@@ -520,11 +521,11 @@ async function getUsers() {
     ],
     { timeout: 20000 }
   )
-  if (r.code !== 0) throw new HttpError(503, '无法读取用户列表（MongoDB 是否在运行？）')
+  if (r.code !== 0) throw new HttpError(503, t('无法读取用户列表（MongoDB 是否在运行？）'))
   try {
     return JSON.parse(r.stdout.trim().split('\n').pop())
   } catch {
-    throw new HttpError(500, '解析用户列表失败')
+    throw new HttpError(500, t('解析用户列表失败'))
   }
 }
 
@@ -540,12 +541,12 @@ function overleafScript(script, args, timeout = 120000) {
 
 route('POST', '/api/users', async req => {
   const { email, admin } = await readJson(req)
-  if (!EMAIL_RE.test(email || '')) throw new HttpError(400, '邮箱格式不正确')
+  if (!EMAIL_RE.test(email || '')) throw new HttpError(400, t('邮箱格式不正确'))
   // also used to issue a new set-password link for an existing user
   // (the script reuses the account); keep the admin flag as given
   const r = await overleafScript('create-user.mjs', [...(admin ? ['--admin'] : []), `--email=${email}`])
   const output = (r.stdout + r.stderr).trim()
-  if (r.code !== 0) throw new HttpError(500, output.slice(-1500) || '创建用户失败')
+  if (r.code !== 0) throw new HttpError(500, output.slice(-1500) || t('创建用户失败'))
   // The script may first print the activation e-mail (HTML with w3.org DTD
   // links) when SMTP is not configured; the real link follows this sentence.
   const after = output.split(/Please visit the following URL[^\n]*\n/).pop()
@@ -557,24 +558,24 @@ route('POST', '/api/users', async req => {
 
 route('DELETE', '/api/users', async req => {
   const { email, transferTo } = await readJson(req)
-  if (!EMAIL_RE.test(email || '')) throw new HttpError(400, '邮箱格式不正确')
+  if (!EMAIL_RE.test(email || '')) throw new HttpError(400, t('邮箱格式不正确'))
   const users = await getUsers()
   const target = users.find(u => u.email === email)
-  if (!target) throw new HttpError(404, '用户不存在')
+  if (!target) throw new HttpError(404, t('用户不存在'))
   if (target.isAdmin && users.filter(u => u.isAdmin).length <= 1) {
-    throw new HttpError(400, '不能删除唯一的管理员，请先把其他用户设为管理员')
+    throw new HttpError(400, t('不能删除唯一的管理员，请先把其他用户设为管理员'))
   }
   const out = []
   if (transferTo) {
-    if (transferTo === email) throw new HttpError(400, '不能把项目转移给被删除的用户自己')
-    if (!users.some(u => u.email === transferTo)) throw new HttpError(400, '接收项目的用户不存在')
-    const t = await overleafScript('transfer-all-projects-to-user.mjs', [`--from-user=${email}`, `--to-user=${transferTo}`], 300000)
-    out.push((t.stdout + t.stderr).trim())
-    if (t.code !== 0) throw new HttpError(500, `转移项目失败，用户未删除：${out.join('\n').slice(-1500)}`)
+    if (transferTo === email) throw new HttpError(400, t('不能把项目转移给被删除的用户自己'))
+    if (!users.some(u => u.email === transferTo)) throw new HttpError(400, t('接收项目的用户不存在'))
+    const tr = await overleafScript('transfer-all-projects-to-user.mjs', [`--from-user=${email}`, `--to-user=${transferTo}`], 300000)
+    out.push((tr.stdout + tr.stderr).trim())
+    if (tr.code !== 0) throw new HttpError(500, t('转移项目失败，用户未删除：{output}', { output: out.join('\n').slice(-1500) }))
   }
   const d = await overleafScript('delete-user.mjs', ['--skip-email', `--email=${email}`], 300000)
   out.push((d.stdout + d.stderr).trim())
-  if (d.code !== 0) throw new HttpError(500, `删除失败：${out.join('\n').slice(-1500)}`)
+  if (d.code !== 0) throw new HttpError(500, t('删除失败：{output}', { output: out.join('\n').slice(-1500) }))
   return { ok: true, output: out.join('\n') }
 })
 
@@ -584,16 +585,16 @@ route('POST', '/api/backups', async () => {
   const cfg = loadConfig()
   const name = new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').slice(0, 19)
   const dir = path.join(BACKUP_DIR, name)
-  const job = startJob('备份数据', async ({ log }) => {
+  const job = startJob(t('备份数据'), async ({ log }) => {
     fs.mkdirSync(dir, { recursive: true })
-    log('导出 MongoDB 数据库 ...')
+    log(t('导出 MongoDB 数据库 ...'))
     const m = await run(
       [...mongoToolArgs(cfg, 'mongodump'), '--host', 'mongo', '--db', 'sharelatex', '--archive', '--gzip'],
       { timeout: 0, stdoutFile: path.join(dir, 'mongo.archive.gz') }
     )
-    if (m.code !== 0) throw new Error(`mongodump 失败：${m.stderr.slice(-500)}`)
-    log('打包项目文件（overleaf_data，不含编译缓存）...')
-    const t = await run(
+    if (m.code !== 0) throw new Error(t('mongodump 失败：{error}', { error: m.stderr.slice(-500) }))
+    log(t('打包项目文件（overleaf_data，不含编译缓存）...'))
+    const tar = await run(
       [
         'run', '--rm', '-v', `${VOLUMES.data}:/v:ro`, '--entrypoint', 'tar', cfg.images.mongoTools,
         'czf', '-', '--numeric-owner',
@@ -602,12 +603,12 @@ route('POST', '/api/backups', async () => {
       ],
       { timeout: 0, stdoutFile: path.join(dir, 'overleaf_data.tar.gz') }
     )
-    if (t.code !== 0) throw new Error(`打包失败：${t.stderr.slice(-500)}`)
+    if (tar.code !== 0) throw new Error(t('打包失败：{error}', { error: tar.stderr.slice(-500) }))
     fs.writeFileSync(
       path.join(dir, 'meta.json'),
       JSON.stringify({ createdAt: new Date().toISOString(), image: `${cfg.overleaf.image}:${cfg.overleaf.tag}`, secrets: cfg.secrets }, null, 2)
     )
-    log(`备份完成：data/backups/${name}`)
+    log(t('备份完成：data/backups/{name}', { name }))
   })
   return { job: job.id, name }
 })
@@ -615,21 +616,21 @@ route('POST', '/api/backups', async () => {
 route('POST', /^\/api\/backups\/([^/]+)\/restore$/, async (req, res, { params }) => {
   const dir = safeBackupName(params[0])
   const cfg = loadConfig()
-  const job = startJob(`恢复备份 ${params[0]}`, async ({ log, step }) => {
+  const job = startJob(t('恢复备份 {name}', { name: params[0] }), async ({ log, step }) => {
     try {
       const meta = JSON.parse(fs.readFileSync(path.join(dir, 'meta.json'), 'utf8'))
       if (meta.secrets) {
         for (const [k, v] of Object.entries(meta.secrets)) if (k in cfg.secrets && v) cfg.secrets[k] = v
         saveConfig(cfg)
-        log('已从备份恢复 Overleaf 密钥')
+        log(t('已从备份恢复 Overleaf 密钥'))
       }
     } catch {}
     writeCompose(cfg)
     await ensureNetwork()
-    log('停止 Overleaf ...')
+    log(t('停止 Overleaf ...'))
     await step(composeArgs('stop', 'sharelatex', 'cloudflared'), { allowFail: true })
     await step(composeArgs('up', '-d', 'mongo', 'mongo-init', 'redis'))
-    log('等待 MongoDB 就绪 ...')
+    log(t('等待 MongoDB 就绪 ...'))
     for (let i = 0; i < 30; i++) {
       const r = await run([...mongoToolArgs(cfg, 'mongosh'), '--host', 'mongo', '--quiet', '--eval', 'db.hello().isWritablePrimary'])
       if (r.stdout.trim() === 'true') break
@@ -637,17 +638,17 @@ route('POST', /^\/api\/backups\/([^/]+)\/restore$/, async (req, res, { params })
     }
     const mongoFile = path.join(dir, 'mongo.archive.gz')
     if (fs.existsSync(mongoFile)) {
-      log('恢复 MongoDB（覆盖现有数据）...')
+      log(t('恢复 MongoDB（覆盖现有数据）...'))
       const r = await run(
         [...mongoToolArgs(cfg, 'mongorestore'), '--host', 'mongo', '--archive', '--gzip', '--drop'],
         { timeout: 0, input: fs.createReadStream(mongoFile) }
       )
       log(r.stderr.split('\n').slice(-5).join('\n'))
-      if (r.code !== 0) throw new Error('mongorestore 失败')
+      if (r.code !== 0) throw new Error(t('mongorestore 失败'))
     }
     const dataFile = path.join(dir, 'overleaf_data.tar.gz')
     if (fs.existsSync(dataFile)) {
-      log('恢复项目文件 ...')
+      log(t('恢复项目文件 ...'))
       const r = await run(
         [
           'run', '--rm', '-i', '-v', `${VOLUMES.data}:/v`, '--entrypoint', 'sh', cfg.images.mongoTools,
@@ -655,9 +656,9 @@ route('POST', /^\/api\/backups\/([^/]+)\/restore$/, async (req, res, { params })
         ],
         { timeout: 0, input: fs.createReadStream(dataFile) }
       )
-      if (r.code !== 0) throw new Error(`解包失败：${r.stderr.slice(-500)}`)
+      if (r.code !== 0) throw new Error(t('解包失败：{error}', { error: r.stderr.slice(-500) }))
     }
-    log('重新启动全部服务 ...')
+    log(t('重新启动全部服务 ...'))
     await step(composeArgs('up', '-d', '--remove-orphans'))
   })
   return { job: job.id }
@@ -671,9 +672,9 @@ route('DELETE', /^\/api\/backups\/([^/]+)$/, async (req, res, { params }) => {
 
 route('GET', /^\/api\/backups\/([^/]+)\/([^/]+)$/, async (req, res, { params }) => {
   const dir = safeBackupName(params[0])
-  if (!/^[\w.-]+$/.test(params[1])) throw new HttpError(400, '无效文件名')
+  if (!/^[\w.-]+$/.test(params[1])) throw new HttpError(400, t('无效文件名'))
   const file = path.join(dir, params[1])
-  if (!fs.existsSync(file)) throw new HttpError(404, '文件不存在')
+  if (!fs.existsSync(file)) throw new HttpError(404, t('文件不存在'))
   res.writeHead(200, {
     'Content-Type': 'application/octet-stream',
     'Content-Length': fs.statSync(file).size,
@@ -702,11 +703,12 @@ const server = http.createServer(async (req, res) => {
       if (!m) continue
       params = m.slice(1).map(decodeURIComponent)
     }
+    setLangFromRequest(req)
     try {
-      if (!r.open && !auth.sessionFromReq(req)) throw new HttpError(401, '请先登录')
+      if (!r.open && !auth.sessionFromReq(req)) throw new HttpError(401, t('请先登录'))
       // CSRF: state-changing requests must come from our own page
       if (req.method !== 'GET' && req.headers['x-requested-with'] !== 'easyovl') {
-        throw new HttpError(403, '缺少请求头')
+        throw new HttpError(403, t('缺少请求头'))
       }
       const result = await r.handler(req, res, { params, query: url.searchParams })
       if (result !== undefined && !res.headersSent) send(res, 200, result)
