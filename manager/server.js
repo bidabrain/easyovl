@@ -512,7 +512,7 @@ route('POST', '/api/cloudflare/verify', async req => {
   return verifyToken(token)
 })
 
-route('GET', '/api/users', async () => {
+async function getUsers() {
   const r = await run(
     [
       ...mongoToolArgs(loadConfig(), 'mongosh'), 'mongodb://mongo/sharelatex', '--quiet', '--eval',
@@ -522,25 +522,28 @@ route('GET', '/api/users', async () => {
   )
   if (r.code !== 0) throw new HttpError(503, '无法读取用户列表（MongoDB 是否在运行？）')
   try {
-    const line = r.stdout.trim().split('\n').pop()
-    return { users: JSON.parse(line) }
+    return JSON.parse(r.stdout.trim().split('\n').pop())
   } catch {
     throw new HttpError(500, '解析用户列表失败')
   }
-})
+}
+
+route('GET', '/api/users', async () => ({ users: await getUsers() }))
+
+/** Run one of Overleaf's own admin scripts inside the sharelatex container. */
+function overleafScript(script, args, timeout = 120000) {
+  return run(
+    ['exec', '-w', '/overleaf/services/web', CONTAINERS.sharelatex, 'node', `modules/server-ce-scripts/scripts/${script}`, ...args],
+    { timeout }
+  )
+}
 
 route('POST', '/api/users', async req => {
   const { email, admin } = await readJson(req)
   if (!EMAIL_RE.test(email || '')) throw new HttpError(400, '邮箱格式不正确')
-  const r = await run(
-    [
-      'exec', '-w', '/overleaf/services/web', CONTAINERS.sharelatex,
-      'node', 'modules/server-ce-scripts/scripts/create-user.mjs',
-      ...(admin ? ['--admin'] : []),
-      `--email=${email}`,
-    ],
-    { timeout: 120000 }
-  )
+  // also used to issue a new set-password link for an existing user
+  // (the script reuses the account); keep the admin flag as given
+  const r = await overleafScript('create-user.mjs', [...(admin ? ['--admin'] : []), `--email=${email}`])
   const output = (r.stdout + r.stderr).trim()
   if (r.code !== 0) throw new HttpError(500, output.slice(-1500) || '创建用户失败')
   // The script may first print the activation e-mail (HTML with w3.org DTD
@@ -550,6 +553,29 @@ route('POST', '/api/users', async req => {
     after.match(/https?:\/\/\S+\/user\/\S+/) ||
     output.match(/https?:\/\/[^\s"'<>]+\/user\/(?:activate|password\/set)\?[^\s"'<>]+/)
   return { output, setPasswordUrl: m ? m[0] : '' }
+})
+
+route('DELETE', '/api/users', async req => {
+  const { email, transferTo } = await readJson(req)
+  if (!EMAIL_RE.test(email || '')) throw new HttpError(400, '邮箱格式不正确')
+  const users = await getUsers()
+  const target = users.find(u => u.email === email)
+  if (!target) throw new HttpError(404, '用户不存在')
+  if (target.isAdmin && users.filter(u => u.isAdmin).length <= 1) {
+    throw new HttpError(400, '不能删除唯一的管理员，请先把其他用户设为管理员')
+  }
+  const out = []
+  if (transferTo) {
+    if (transferTo === email) throw new HttpError(400, '不能把项目转移给被删除的用户自己')
+    if (!users.some(u => u.email === transferTo)) throw new HttpError(400, '接收项目的用户不存在')
+    const t = await overleafScript('transfer-all-projects-to-user.mjs', [`--from-user=${email}`, `--to-user=${transferTo}`], 300000)
+    out.push((t.stdout + t.stderr).trim())
+    if (t.code !== 0) throw new HttpError(500, `转移项目失败，用户未删除：${out.join('\n').slice(-1500)}`)
+  }
+  const d = await overleafScript('delete-user.mjs', ['--skip-email', `--email=${email}`], 300000)
+  out.push((d.stdout + d.stderr).trim())
+  if (d.code !== 0) throw new HttpError(500, `删除失败：${out.join('\n').slice(-1500)}`)
+  return { ok: true, output: out.join('\n') }
 })
 
 route('GET', '/api/backups', async () => ({ backups: listBackups() }))

@@ -348,14 +348,14 @@
             <button class="btn primary" type="submit">创建</button>
           </form>
           <div id="user-result" class="hidden result"></div>
-          <p class="muted">创建后会得到一个设置密码的链接，发给对方即可。第一个管理员也可以直接打开 Overleaf 的 <code>/launchpad</code> 页面创建。更多用户管理（删除、项目转移等）请用 Overleaf 自带的管理面板 <code>/admin/users</code>。</p>
+          <p class="muted">创建后会得到一个设置密码的链接（7 天内有效），发给对方即可。链接过期或忘记密码时，在下方列表点「密码链接」重新生成。没有配置邮件时 Overleaf 不会发邮件，请手动把链接发给对方。</p>
         </div>
         <div class="card">
           <h2>用户列表</h2>
           <div class="table-wrap">
             <table class="table">
-              <thead><tr><th>邮箱</th><th>姓名</th><th>角色</th><th>注册时间</th><th>最近登录</th></tr></thead>
-              <tbody id="users"><tr><td colspan="5" class="muted">加载中…</td></tr></tbody>
+              <thead><tr><th>邮箱</th><th>姓名</th><th>角色</th><th>注册时间</th><th>最近登录</th><th></th></tr></thead>
+              <tbody id="users"><tr><td colspan="6" class="muted">加载中…</td></tr></tbody>
             </table>
           </div>
         </div>

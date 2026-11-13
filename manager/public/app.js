@@ -501,26 +501,108 @@ $('#job-toggle').onclick = () => {
 
 // ------------------------------------------------------------------ users
 
+let userList = []
+
 async function loadUsers() {
   const tbody = $('#users')
   try {
     const { users } = await api('/api/users')
+    userList = users
     if (!users.length) {
-      tbody.innerHTML = '<tr><td colspan="5" class="muted">还没有用户</td></tr>'
+      tbody.innerHTML = '<tr><td colspan="6" class="muted">还没有用户</td></tr>'
       return
     }
     const d = v => (v ? new Date(v).toLocaleString() : '—')
     tbody.innerHTML = users
       .map(
-        u => `<tr><td>${esc(u.email)}</td><td>${esc([u.first_name, u.last_name].filter(Boolean).join(' ') || '—')}</td>
-        <td>${u.isAdmin ? '<span class="badge">管理员</span>' : '用户'}</td><td>${d(u.signUpDate)}</td><td>${d(u.lastLoggedIn)}</td></tr>`
+        u => `<tr data-email="${esc(u.email)}"><td>${esc(u.email)}</td><td>${esc([u.first_name, u.last_name].filter(Boolean).join(' ') || '—')}</td>
+        <td>${u.isAdmin ? '<span class="badge">管理员</span>' : '用户'}</td><td>${d(u.signUpDate)}</td><td>${d(u.lastLoggedIn)}</td>
+        <td class="user-actions">
+          <button class="btn small" type="button" data-user-link>密码链接</button>
+          <button class="btn small danger-outline" type="button" data-user-del>删除</button>
+        </td></tr>`
       )
       .join('')
   } catch (err) {
-    tbody.innerHTML = `<tr><td colspan="5" class="muted">${esc(err.message)}</td></tr>`
+    tbody.innerHTML = `<tr><td colspan="6" class="muted">${esc(err.message)}</td></tr>`
   }
 }
 $('#users-refresh').onclick = loadUsers
+
+function showUserResult(html) {
+  const box = $('#user-result')
+  box.innerHTML = html
+  box.classList.remove('hidden')
+  box.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+}
+
+function linkHtml(r, email, verb) {
+  let html = `<strong>${verb} ${esc(email)}</strong><br>`
+  if (r.setPasswordUrl) {
+    const u = new URL(r.setPasswordUrl)
+    const localUrl = `http://${location.hostname}:${lastStatus?.port || 8080}${u.pathname}${u.search}`
+    html += `设置密码链接（7 天内有效，发给对方）：<br><a href="${esc(r.setPasswordUrl)}" target="_blank" rel="noopener">${esc(r.setPasswordUrl)}</a>`
+    if (localUrl !== r.setPasswordUrl) {
+      html += `<br><span class="muted">本机访问：</span><a href="${esc(localUrl)}" target="_blank" rel="noopener">${esc(localUrl)}</a>`
+    }
+  } else {
+    html += `<pre class="console">${esc(r.output)}</pre>`
+  }
+  return html
+}
+
+$('#users').addEventListener('click', async e => {
+  const row = e.target.closest('tr[data-email]')
+  if (!row) return
+  const email = row.dataset.email
+  const user = userList.find(u => u.email === email)
+  const cell = row.querySelector('.user-actions')
+
+  // new set-password link for an existing user; keeps the admin flag
+  if (e.target.closest('[data-user-link]')) {
+    const btn = e.target.closest('button')
+    btn.disabled = true
+    try {
+      const r = await api('/api/users', { method: 'POST', body: { email, admin: Boolean(user?.isAdmin) } })
+      showUserResult(linkHtml(r, email, '已为'))
+    } catch (err) {
+      showUserResult(`<span class="error">${esc(err.message)}</span>`)
+    } finally {
+      btn.disabled = false
+    }
+    return
+  }
+
+  // step 1: inline confirmation, with an option to keep the projects
+  if (e.target.closest('[data-user-del]')) {
+    const others = userList.filter(u => u.email !== email)
+    const opts = others.map(u => `<option value="${esc(u.email)}">项目转给 ${esc(u.email)}</option>`).join('')
+    cell.innerHTML = `
+      <select data-transfer title="该用户的项目如何处理">
+        <option value="">项目一并删除</option>${opts}
+      </select>
+      <button class="btn small danger-outline" type="button" data-user-del-confirm>确认删除</button>
+      <button class="btn small" type="button" data-user-del-cancel>取消</button>`
+    return
+  }
+  if (e.target.closest('[data-user-del-cancel]')) return loadUsers()
+
+  // step 2: delete
+  if (e.target.closest('[data-user-del-confirm]')) {
+    const transferTo = cell.querySelector('[data-transfer]').value
+    const what = transferTo ? `项目将转给 ${transferTo}` : '该用户的所有项目也会被删除'
+    if (!confirm(`确定删除用户 ${email}？\n${what}。`)) return
+    cell.querySelectorAll('button, select').forEach(el => (el.disabled = true))
+    try {
+      await api('/api/users', { method: 'DELETE', body: { email, transferTo } })
+      toast(`已删除 ${email}`)
+      showUserResult(`<strong>已删除 ${esc(email)}</strong>${transferTo ? `，项目已转给 ${esc(transferTo)}` : ''}`)
+    } catch (err) {
+      showUserResult(`<span class="error">${esc(err.message)}</span>`)
+    }
+    loadUsers()
+  }
+})
 
 $('#user-form').onsubmit = async e => {
   e.preventDefault()
@@ -532,15 +614,7 @@ $('#user-form').onsubmit = async e => {
       method: 'POST',
       body: { email: $('#user-email').value.trim(), admin: $('#user-admin').checked },
     })
-    let html = `<strong>已创建 ${esc($('#user-email').value)}</strong><br>`
-    if (r.setPasswordUrl) {
-      const u = new URL(r.setPasswordUrl)
-      const localUrl = `http://${location.hostname}:${lastStatus?.port || 8080}${u.pathname}${u.search}`
-      html += `设置密码链接（发给对方）：<br><a href="${esc(r.setPasswordUrl)}" target="_blank" rel="noopener">${esc(r.setPasswordUrl)}</a>`
-      if (localUrl !== r.setPasswordUrl) html += `<br><span class="muted">本机访问：</span><a href="${esc(localUrl)}" target="_blank" rel="noopener">${esc(localUrl)}</a>`
-    } else {
-      html += `<pre class="console">${esc(r.output)}</pre>`
-    }
+    const html = linkHtml(r, $('#user-email').value, '已创建')
     box.innerHTML = html
     box.classList.remove('hidden')
     $('#user-email').value = ''
