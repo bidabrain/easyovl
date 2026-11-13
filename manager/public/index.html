@@ -324,8 +324,8 @@
           <h2>隧道令牌</h2>
           <ol class="steps muted">
             <li>在 <a href="https://one.dash.cloudflare.com/" target="_blank" rel="noopener">Cloudflare Zero Trust</a> → 网络 → 隧道，创建一个 Cloudflared 隧道。</li>
-            <li>在「公共主机名」中添加你的域名，服务类型选 <b>HTTP</b>，URL 填 <code>sharelatex:80</code>。</li>
-            <li>复制安装命令中 <code>--token</code> 后面的那一串，粘贴到下面。</li>
+            <li>在隧道的「路由 → 添加路由 → 已发布的应用程序」（旧版界面叫「公共主机名」）中添加你的域名，服务填 <code>http://sharelatex:80</code>。注意是 <b>http</b> 不是 https，主机是 <code>sharelatex</code> 不是 <code>localhost</code>。</li>
+            <li>在隧道「概览」页的安装命令里，复制 <code>--token</code> 后面的那一串，粘贴到下面，并在「公网域名」填同一个域名。</li>
           </ol>
           <div class="grid">
             <label class="field"><span>隧道令牌</span><input data-k="tunnel.token" type="password" data-secret autocomplete="off" /></label>

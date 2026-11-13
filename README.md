@@ -82,7 +82,13 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 
 控制台会自动创建隧道、配置入口规则（`你的域名 → http://sharelatex:80`）并添加 DNS 记录，Overleaf 的站点地址也会自动设为该域名。
 
-**隧道令牌**模式下，请在 Cloudflare 隧道的「公共主机名」里把服务设为 `HTTP`，URL 填 `sharelatex:80`。
+**隧道令牌**模式下，请在 Cloudflare 隧道的「路由 → 已发布的应用程序」（旧版界面叫「公共主机名」）里添加域名，服务填 `http://sharelatex:80`。注意：
+
+- 是 `http` 不是 `https`：Overleaf 本身只提供 HTTP，HTTPS 由 Cloudflare 负责，填 https 会出现 502。
+- 主机是 `sharelatex` 不是 `localhost`：cloudflared 运行在自己的容器里，`localhost` 指的是它自己。
+- 控制台「外网访问」页的「公网域名」要填同一个域名，Overleaf 的站点地址才会正确。
+
+如果你是在宿主机上自己运行 cloudflared（「外网访问」选关闭），服务则填 `http://localhost:8080`，并在「站点」页手动填写站点地址。
 
 > ⚠️ 公网开放后任何人都能看到登录页。建议保持「开放注册」关闭，只由管理员创建账号；或者用「允许注册的邮箱域名」做限制。
 
