@@ -408,9 +408,41 @@
           <textarea data-k="extraEnv" rows="10" spellcheck="false" placeholder="# 例：OIDC 登录&#10;# EXTERNAL_AUTH=oidc&#10;# OVERLEAF_OIDC_ISSUER=https://accounts.example.com"></textarea>
         </div>
         <div class="card">
+          <h2>MongoDB</h2>
+          <p class="muted" id="cpu-info"></p>
+          <div class="choice-grid three">
+            <label class="choice">
+              <input type="radio" name="mongomode" data-k="images.mongoMode" value="auto" />
+              <div>
+                <strong>自动（推荐）</strong>
+                <p class="muted">CPU 支持 AVX 时用官方 MongoDB，不支持时自动改用无 AVX 版本。</p>
+              </div>
+            </label>
+            <label class="choice">
+              <input type="radio" name="mongomode" data-k="images.mongoMode" value="official" />
+              <div>
+                <strong>官方 MongoDB</strong>
+                <p class="muted">始终使用官方镜像。需要 CPU 支持 AVX，否则数据库无法启动。</p>
+              </div>
+            </label>
+            <label class="choice">
+              <input type="radio" name="mongomode" data-k="images.mongoMode" value="noavx" />
+              <div>
+                <strong>无 AVX 版本</strong>
+                <p class="muted">始终使用社区编译的无 AVX 版本（第三方构建，非 MongoDB 官方），适合赛扬 / 凌动等 NAS CPU。</p>
+              </div>
+            </label>
+          </div>
+          <div class="grid">
+            <label class="field"><span>官方镜像</span><input data-k="images.mongo" /></label>
+            <label class="field"><span>无 AVX 版本镜像</span><input data-k="images.mongoNoAvx" /></label>
+            <label class="field"><span>工具镜像（mongosh / 备份）</span><input data-k="images.mongoTools" /></label>
+          </div>
+          <p class="muted">数据格式相同，切换后保存并应用即可，数据不会丢失。工具镜像只用于初始化、查看用户和备份，不需要 AVX。</p>
+        </div>
+        <div class="card">
           <h2>依赖镜像</h2>
           <div class="grid">
-            <label class="field"><span>MongoDB</span><input data-k="images.mongo" /></label>
             <label class="field"><span>Redis</span><input data-k="images.redis" /></label>
             <label class="field"><span>Cloudflared</span><input data-k="images.cloudflared" /></label>
           </div>

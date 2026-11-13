@@ -152,13 +152,14 @@ input:focus, select:focus, textarea:focus { outline: 2px solid color-mix(in srgb
 .actions select { width: auto; }
 
 .choice-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.choice-grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .choice {
   display: flex; gap: 10px; border: 1px solid var(--border); border-radius: var(--radius);
   padding: 12px 14px; cursor: pointer; background: var(--surface);
 }
 .choice:hover { border-color: color-mix(in srgb, var(--accent) 50%, var(--border)); }
 .choice:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
-.choice input { width: auto; margin-top: 4px; accent-color: var(--accent); }
+.choice input { width: auto; height: auto; align-self: center; margin: 0; accent-color: var(--accent); }
 .choice p { margin: 4px 0 0; font-size: 13px; }
 .steps { padding-left: 20px; margin: 0 0 14px; }
 .steps li { margin-bottom: 4px; }
@@ -243,7 +244,7 @@ body.job-open.job-min .savebar { bottom: 66px; }
 /* ---------- responsive ---------- */
 @media (max-width: 860px) {
   .cards { grid-template-columns: 1fr; }
-  .grid, .choice-grid, .choice-grid.two { grid-template-columns: 1fr; }
+  .grid, .choice-grid, .choice-grid.two, .choice-grid.three { grid-template-columns: 1fr; }
 }
 @media (max-width: 720px) {
   .app { flex-direction: column; }

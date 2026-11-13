@@ -127,6 +127,7 @@ document.addEventListener('click', e => {
 
 let config = null
 let dirty = false
+let cpu = null
 
 const getPath = (obj, p) => p.split('.').reduce((o, k) => o?.[k], obj)
 function setPath(obj, p, v) {
@@ -192,6 +193,17 @@ function syncVisibility() {
   const z = $('#cf-zone').selectedOptions[0]
   const zn = z?.dataset.name || (f.tunnel.zoneId ? config?.tunnel.zoneName : '')
   $('#cf-preview').textContent = f.tunnel.subdomain && zn ? `https://${f.tunnel.subdomain}.${zn}` : '—'
+  syncMongo(f.images)
+}
+
+function syncMongo(im) {
+  const el = $('#cpu-info')
+  if (!cpu) return (el.textContent = '')
+  const avx = cpu.avx
+  const used = im.mongoMode === 'noavx' || (im.mongoMode === 'auto' && !avx) ? im.mongoNoAvx : im.mongo
+  const warn = im.mongoMode === 'official' && !avx ? ' ⚠ 这台机器无法运行官方 MongoDB。' : ''
+  el.textContent =
+    `检测到 CPU：${cpu.model || '未知'}，${avx ? '支持' : '不支持'} AVX。当前将使用：${used}。${warn}`
 }
 
 document.addEventListener('input', e => {
@@ -211,6 +223,7 @@ async function loadConfig() {
   const data = await api('/api/config')
   config = data.config
   $('#site-url-effective').textContent = data.siteUrl
+  cpu = data.cpu || cpu
   fillForm()
 }
 
@@ -221,6 +234,7 @@ async function save(apply) {
     const data = await api('/api/config', { method: 'PUT', body: { config: readForm(), apply } })
     config = data.config
     $('#site-url-effective').textContent = data.siteUrl
+    cpu = data.cpu || cpu
     fillForm()
     toast(apply ? '已保存，正在应用…' : '已保存')
     if (data.job) watchJob(data.job)

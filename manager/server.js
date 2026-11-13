@@ -5,11 +5,14 @@ import { fileURLToPath } from 'node:url'
 import {
   BACKUP_DIR,
   CONTAINERS,
+  NETWORK,
   VOLUMES,
   applyUpdate,
   configExists,
+  cpuInfo,
   effectiveSiteUrl,
   loadConfig,
+  mongoImage,
   redact,
   saveConfig,
   tunnelHostname,
@@ -204,48 +207,39 @@ async function ensureFullTexlive(cfg, { log, step }) {
   }
 }
 
-/**
- * MongoDB >= 5.0 needs AVX on x86_64; many NAS CPUs (Celeron J4125, J3455 ...)
- * lack it and mongod just exits. /proc/cpuinfo shows the host CPU.
- */
-function checkMongoCpu(cfg) {
-  if (process.arch !== 'x64') return
-  let info = ''
-  try {
-    info = fs.readFileSync('/proc/cpuinfo', 'utf8')
-  } catch {
-    return
+/** docker run args for a one-off MongoDB tool on the stack network. */
+function mongoToolArgs(cfg, tool) {
+  return ['run', '--rm', '-i', '--network', NETWORK, '--entrypoint', tool, cfg.images.mongoTools]
+}
+
+function logMongoChoice(cfg, log) {
+  const img = mongoImage(cfg)
+  const cpu = cpuInfo()
+  const mode = cfg.images.mongoMode
+  if (mode === 'auto' && img !== cfg.images.mongo) {
+    log(`CPU（${cpu.model || '未知'}）不支持 AVX，官方 MongoDB 无法运行，自动改用无 AVX 版本：${img}`)
+  } else if (mode === 'noavx') {
+    log(`使用无 AVX 版本的 MongoDB：${img}`)
+  } else if (!cpu.avx) {
+    log(`⚠ CPU（${cpu.model || '未知'}）不支持 AVX，${img} 很可能无法启动。可在「高级 → MongoDB」改为“自动”或“无 AVX 版本”。`)
   }
-  const flags = /^flags\s*:(.*)$/m.exec(info)?.[1] || ''
-  if (!flags || /\bavx\b/.test(flags)) return
-  const m = /:(\d+)/.exec(cfg.images.mongo)
-  if (m && Number(m[1]) < 5) return
-  const model = /^model name\s*:\s*(.*)$/m.exec(info)?.[1] || '未知 CPU'
-  throw new Error(
-    `这台机器的 CPU（${model}）不支持 AVX 指令，MongoDB 5.0 及以上版本（当前 ${cfg.images.mongo}）无法运行。` +
-      '请换一台支持 AVX 的机器运行 Overleaf。'
-  )
 }
 
 /** On a failed `compose up`, print the logs that explain why. */
 async function logContainerTails(log) {
-  for (const name of [CONTAINERS.mongo, CONTAINERS.sharelatex]) {
+  for (const name of [CONTAINERS.mongo, CONTAINERS.mongoInit, CONTAINERS.sharelatex]) {
     const st = await run(['inspect', '--format', '{{.State.Status}} exit={{.State.ExitCode}} restarts={{.RestartCount}}', name], { timeout: 10000 })
     if (st.code !== 0) continue
     log(`---- ${name}（${st.stdout.trim()}）最近日志 ----`)
     const r = await run(['logs', '--tail', '40', name], { timeout: 15000 })
     log((r.stdout + r.stderr).trim() || '(无日志)')
-    if (name === CONTAINERS.mongo) {
-      const h = await run(['inspect', '--format', '{{range .State.Health.Log}}{{.ExitCode}}: {{.Output}}{{end}}', name], { timeout: 10000 })
-      if (h.stdout.trim()) log(`健康检查输出：\n${h.stdout.trim().slice(-1500)}`)
-    }
   }
 }
 
 function startApplyJob(title = '应用配置并启动') {
   return startJob(title, async ({ log, step }) => {
     let cfg = loadConfig()
-    checkMongoCpu(cfg)
+    logMongoChoice(cfg, log)
     await ensureNetwork()
     await detectDockerRoot()
 
@@ -350,7 +344,7 @@ route('POST', '/api/password', async req => {
 
 route('GET', '/api/config', async () => {
   const cfg = loadConfig()
-  return { config: redact(cfg), siteUrl: effectiveSiteUrl(cfg) }
+  return { config: redact(cfg), siteUrl: effectiveSiteUrl(cfg), cpu: cpuInfo(), mongoImage: mongoImage(cfg) }
 })
 
 route('PUT', '/api/config', async req => {
@@ -368,7 +362,7 @@ route('PUT', '/api/config', async req => {
   saveConfig(next)
   let job = null
   if (body.apply) job = startApplyJob()
-  return { config: redact(next), siteUrl: effectiveSiteUrl(next), job: job?.id }
+  return { config: redact(next), siteUrl: effectiveSiteUrl(next), cpu: cpuInfo(), mongoImage: mongoImage(next), job: job?.id }
 })
 
 route('GET', '/api/compose', async () => {
@@ -502,7 +496,7 @@ route('POST', '/api/cloudflare/verify', async req => {
 route('GET', '/api/users', async () => {
   const r = await run(
     [
-      'exec', CONTAINERS.mongo, 'mongosh', 'sharelatex', '--quiet', '--eval',
+      ...mongoToolArgs(loadConfig(), 'mongosh'), 'mongodb://mongo/sharelatex', '--quiet', '--eval',
       'JSON.stringify(db.users.find({}, {email:1,isAdmin:1,first_name:1,last_name:1,signUpDate:1,lastLoggedIn:1}).sort({signUpDate:1}).limit(500).toArray())',
     ],
     { timeout: 20000 }
@@ -544,14 +538,14 @@ route('POST', '/api/backups', async () => {
     fs.mkdirSync(dir, { recursive: true })
     log('导出 MongoDB 数据库 ...')
     const m = await run(
-      ['exec', CONTAINERS.mongo, 'mongodump', '--archive', '--gzip', '--db', 'sharelatex'],
+      [...mongoToolArgs(cfg, 'mongodump'), '--host', 'mongo', '--db', 'sharelatex', '--archive', '--gzip'],
       { timeout: 0, stdoutFile: path.join(dir, 'mongo.archive.gz') }
     )
     if (m.code !== 0) throw new Error(`mongodump 失败：${m.stderr.slice(-500)}`)
     log('打包项目文件（overleaf_data，不含编译缓存）...')
     const t = await run(
       [
-        'run', '--rm', '-v', `${VOLUMES.data}:/v:ro`, '--entrypoint', 'tar', cfg.images.mongo,
+        'run', '--rm', '-v', `${VOLUMES.data}:/v:ro`, '--entrypoint', 'tar', cfg.images.mongoTools,
         'czf', '-', '--numeric-owner',
         '--exclude=./data/compiles', '--exclude=./data/output', '--exclude=./data/cache', '--exclude=./tmp',
         '-C', '/v', '.',
@@ -576,10 +570,10 @@ route('POST', /^\/api\/backups\/([^/]+)\/restore$/, async (req, res, { params })
     await ensureNetwork()
     log('停止 Overleaf ...')
     await step(composeArgs('stop', 'sharelatex', 'cloudflared'), { allowFail: true })
-    await step(composeArgs('up', '-d', 'mongo', 'redis'))
+    await step(composeArgs('up', '-d', 'mongo', 'mongo-init', 'redis'))
     log('等待 MongoDB 就绪 ...')
     for (let i = 0; i < 30; i++) {
-      const r = await run(['exec', CONTAINERS.mongo, 'mongosh', '--quiet', '--eval', 'db.hello().isWritablePrimary'])
+      const r = await run([...mongoToolArgs(cfg, 'mongosh'), '--host', 'mongo', '--quiet', '--eval', 'db.hello().isWritablePrimary'])
       if (r.stdout.trim() === 'true') break
       await new Promise(r => setTimeout(r, 2000))
     }
@@ -587,7 +581,7 @@ route('POST', /^\/api\/backups\/([^/]+)\/restore$/, async (req, res, { params })
     if (fs.existsSync(mongoFile)) {
       log('恢复 MongoDB（覆盖现有数据）...')
       const r = await run(
-        ['exec', '-i', CONTAINERS.mongo, 'mongorestore', '--archive', '--gzip', '--drop'],
+        [...mongoToolArgs(cfg, 'mongorestore'), '--host', 'mongo', '--archive', '--gzip', '--drop'],
         { timeout: 0, input: fs.createReadStream(mongoFile) }
       )
       log(r.stderr.split('\n').slice(-5).join('\n'))
@@ -598,7 +592,7 @@ route('POST', /^\/api\/backups\/([^/]+)\/restore$/, async (req, res, { params })
       log('恢复项目文件 ...')
       const r = await run(
         [
-          'run', '--rm', '-i', '-v', `${VOLUMES.data}:/v`, '--entrypoint', 'sh', cfg.images.mongo,
+          'run', '--rm', '-i', '-v', `${VOLUMES.data}:/v`, '--entrypoint', 'sh', cfg.images.mongoTools,
           '-c', 'find /v -mindepth 1 -maxdepth 1 -exec rm -rf {} + && tar xzf - --numeric-owner -C /v',
         ],
         { timeout: 0, input: fs.createReadStream(dataFile) }

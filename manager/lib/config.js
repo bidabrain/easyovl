@@ -17,6 +17,7 @@ export const VOLUMES = {
 export const CONTAINERS = {
   sharelatex: 'overleaf-sharelatex',
   mongo: 'overleaf-mongo',
+  mongoInit: 'overleaf-mongo-init',
   redis: 'overleaf-redis',
   cloudflared: 'overleaf-cloudflared',
 }
@@ -84,7 +85,14 @@ export const DEFAULTS = {
     useQuickUrlAsSite: false,
   },
   images: {
+    // auto: official image if the CPU has AVX, otherwise mongoNoAvx
+    // official: always images.mongo / noavx: always images.mongoNoAvx
+    mongoMode: 'auto',
     mongo: 'mongo:8.0',
+    // community build of MongoDB 8.0 without AVX (mongod only)
+    mongoNoAvx: 'devferris/mongodb-no-avx:8.0.17-nehalem',
+    // provides mongosh / mongodump / mongorestore / tar for maintenance tasks
+    mongoTools: 'mongo:8.0',
     redis: 'redis:7.4',
     cloudflared: 'cloudflare/cloudflared:latest',
   },
@@ -201,6 +209,32 @@ export function effectiveSiteUrl(cfg) {
   if (t.mode === 'token' && t.hostname) return `https://${t.hostname}`
   if (t.mode === 'quick' && t.useQuickUrlAsSite && t.quickUrl) return t.quickUrl
   return `http://localhost:${cfg.overleaf.port}`
+}
+
+/**
+ * Whether the host CPU has AVX (needed by official MongoDB >= 5.0 builds).
+ * /proc/cpuinfo inside a container shows the host CPU.
+ */
+let avxCache
+export function cpuInfo() {
+  if (avxCache) return avxCache
+  avxCache = { avx: true, model: '' }
+  if (process.arch !== 'x64') return avxCache
+  try {
+    const info = fs.readFileSync('/proc/cpuinfo', 'utf8')
+    const flags = /^flags\s*:(.*)$/m.exec(info)?.[1]
+    if (flags) avxCache.avx = /\bavx\b/.test(flags)
+    avxCache.model = /^model name\s*:\s*(.*)$/m.exec(info)?.[1] || ''
+  } catch {}
+  return avxCache
+}
+
+/** Image actually used for the mongo service. */
+export function mongoImage(cfg) {
+  const { mongoMode, mongo, mongoNoAvx } = cfg.images
+  if (mongoMode === 'noavx') return mongoNoAvx || mongo
+  if (mongoMode === 'official') return mongo
+  return !cpuInfo().avx && mongoNoAvx ? mongoNoAvx : mongo
 }
 
 export function tunnelHostname(cfg) {

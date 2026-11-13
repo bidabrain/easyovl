@@ -7,6 +7,7 @@ import {
   STACK_DIR,
   VOLUMES,
   effectiveSiteUrl,
+  mongoImage,
   parseEnvLines,
   splitList,
 } from './config.js'
@@ -161,31 +162,38 @@ export function buildEnv(cfg) {
 
 // ---------- compose document ----------
 
+const MONGO_INIT_JS =
+  "try { rs.status() } catch (e) { print('initiating replica set: ' + e.message); " +
+  "rs.initiate({ _id: 'overleaf', members: [{ _id: 0, host: 'mongo:27017' }] }) } " +
+  "let n = 0; while (!db.hello().isWritablePrimary) { if (++n > 60) throw new Error('not primary'); sleep(1000) } " +
+  "print('MongoDB replica set ready')"
+
+// retry until mongod accepts connections (it may take a while on a NAS)
+const MONGO_INIT_SCRIPT =
+  'for i in $(seq 1 90); do ' +
+  `mongosh --quiet --host mongo --eval "${MONGO_INIT_JS}" && exit 0; ` +
+  'sleep 2; done; echo "MongoDB did not become ready" >&2; exit 1'
+
 export function buildCompose(cfg) {
   const o = cfg.overleaf
   const services = {
     mongo: {
-      image: cfg.images.mongo,
+      image: mongoImage(cfg),
       container_name: CONTAINERS.mongo,
       restart: 'unless-stopped',
-      command: '--replSet overleaf --bind_ip_all',
-      environment: { MONGO_INITDB_DATABASE: 'sharelatex' },
+      // works with the official entrypoint and with mongod-only images
+      command: ['--replSet', 'overleaf', '--bind_ip_all'],
       extra_hosts: ['mongo:127.0.0.1'],
       volumes: [`${VOLUMES.mongo}:/data/db`],
-      // initiates the single-node replica set on first boot
-      healthcheck: {
-        test: [
-          'CMD',
-          'mongosh',
-          '--quiet',
-          '--eval',
-          "try { rs.status().ok } catch (e) { rs.initiate({ _id: 'overleaf', members: [{ _id: 0, host: 'mongo:27017' }] }).ok }",
-        ],
-        interval: '10s',
-        timeout: '10s',
-        retries: 10,
-        start_period: '20s',
-      },
+    },
+    // One-shot: initiates the single-node replica set and waits for PRIMARY.
+    // Runs mongosh from the tools image, so the mongo image may be mongod-only.
+    'mongo-init': {
+      image: cfg.images.mongoTools,
+      container_name: CONTAINERS.mongoInit,
+      restart: 'no',
+      depends_on: ['mongo'],
+      entrypoint: ['/bin/sh', '-c', MONGO_INIT_SCRIPT],
     },
     redis: {
       image: cfg.images.redis,
@@ -198,7 +206,7 @@ export function buildCompose(cfg) {
       container_name: CONTAINERS.sharelatex,
       restart: 'unless-stopped',
       depends_on: {
-        mongo: { condition: 'service_healthy' },
+        'mongo-init': { condition: 'service_completed_successfully' },
         redis: { condition: 'service_started' },
       },
       stop_grace_period: '60s',

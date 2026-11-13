@@ -117,6 +117,14 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 
 ## 常见问题
 
+**NAS 的 CPU 不支持 AVX（赛扬 J4125、J3455 等）？** 官方 MongoDB 5.0 以上需要 AVX，而 Overleaf 要求 MongoDB 8.0。在「高级 → MongoDB」有三种选择：
+
+- **自动（推荐，默认）**：CPU 支持 AVX 时用官方 `mongo:8.0`，不支持时自动改用无 AVX 版本。
+- **官方 MongoDB**：始终用官方镜像。
+- **无 AVX 版本**：始终用社区编译的 [`devferris/mongodb-no-avx`](https://hub.docker.com/r/devferris/mongodb-no-avx)（基于 [Axcient/mongod-avx](https://github.com/Axcient/mongod-avx) 补丁构建，**非 MongoDB 官方**）。不放心的话可以把镜像名换成自己构建的镜像。
+
+页面上会显示检测到的 CPU 型号、是否支持 AVX，以及实际会使用的镜像。两种镜像的数据格式相同，切换后保存并应用即可。
+
 **忘记控制台密码？** 删除 `data/auth.json`，然后重启控制台：
 
 ```bash
