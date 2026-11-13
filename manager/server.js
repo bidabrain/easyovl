@@ -192,19 +192,60 @@ async function ensureFullTexlive(cfg, { log, step }) {
   await step(
     [
       'run', '--rm', '-e', `IMG=${img}`, '-v', `${vol}:/t`, '--entrypoint', 'sh', img, '-c',
-      `find /t -mindepth 1 -delete && cp -a /usr/local/texlive/. /t/ && printf '%s' "$IMG" > /t/${TEXLIVE_MARKER}`,
+      `find /t -mindepth 1 -delete && cp -a /usr/local/texlive/. /t/ && printf '%s' "$IMG" > /t/${TEXLIVE_MARKER}` +
+        ` && echo "已复制：$(ls /t | tr '\\n' ' ')" && du -sh /t`,
     ],
     { label: `复制 ${img} 中的 /usr/local/texlive 到卷 ${vol}` }
   )
-  if (!hadImage && !texliveImages(cfg).includes(img)) {
+  // sandbox is off on this path, so nothing else needs the image
+  if (!hadImage) {
     log('删除 TeX Live 镜像以节省磁盘空间（内容已在数据卷中）')
     await step(['image', 'rm', img], { allowFail: true })
+  }
+}
+
+/**
+ * MongoDB >= 5.0 needs AVX on x86_64; many NAS CPUs (Celeron J4125, J3455 ...)
+ * lack it and mongod just exits. /proc/cpuinfo shows the host CPU.
+ */
+function checkMongoCpu(cfg) {
+  if (process.arch !== 'x64') return
+  let info = ''
+  try {
+    info = fs.readFileSync('/proc/cpuinfo', 'utf8')
+  } catch {
+    return
+  }
+  const flags = /^flags\s*:(.*)$/m.exec(info)?.[1] || ''
+  if (!flags || /\bavx\b/.test(flags)) return
+  const m = /:(\d+)/.exec(cfg.images.mongo)
+  if (m && Number(m[1]) < 5) return
+  const model = /^model name\s*:\s*(.*)$/m.exec(info)?.[1] || '未知 CPU'
+  throw new Error(
+    `这台机器的 CPU（${model}）不支持 AVX 指令，MongoDB 5.0 及以上版本（当前 ${cfg.images.mongo}）无法运行。` +
+      '请换一台支持 AVX 的机器运行 Overleaf。'
+  )
+}
+
+/** On a failed `compose up`, print the logs that explain why. */
+async function logContainerTails(log) {
+  for (const name of [CONTAINERS.mongo, CONTAINERS.sharelatex]) {
+    const st = await run(['inspect', '--format', '{{.State.Status}} exit={{.State.ExitCode}} restarts={{.RestartCount}}', name], { timeout: 10000 })
+    if (st.code !== 0) continue
+    log(`---- ${name}（${st.stdout.trim()}）最近日志 ----`)
+    const r = await run(['logs', '--tail', '40', name], { timeout: 15000 })
+    log((r.stdout + r.stderr).trim() || '(无日志)')
+    if (name === CONTAINERS.mongo) {
+      const h = await run(['inspect', '--format', '{{range .State.Health.Log}}{{.ExitCode}}: {{.Output}}{{end}}', name], { timeout: 10000 })
+      if (h.stdout.trim()) log(`健康检查输出：\n${h.stdout.trim().slice(-1500)}`)
+    }
   }
 }
 
 function startApplyJob(title = '应用配置并启动') {
   return startJob(title, async ({ log, step }) => {
     let cfg = loadConfig()
+    checkMongoCpu(cfg)
     await ensureNetwork()
     await detectDockerRoot()
 
@@ -243,7 +284,12 @@ function startApplyJob(title = '应用配置并启动') {
 
     if (useFullTexlive(cfg)) await ensureFullTexlive(cfg, { log, step })
 
-    await step(composeArgs('up', '-d', '--remove-orphans'))
+    try {
+      await step(composeArgs('up', '-d', '--remove-orphans', '--quiet-pull'))
+    } catch (err) {
+      await logContainerTails(log)
+      throw err
+    }
     log('容器已启动。Overleaf 首次启动需要 1~3 分钟完成初始化。')
   })
 }
