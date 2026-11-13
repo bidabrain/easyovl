@@ -543,7 +543,12 @@ route('POST', '/api/users', async req => {
   )
   const output = (r.stdout + r.stderr).trim()
   if (r.code !== 0) throw new HttpError(500, output.slice(-1500) || '创建用户失败')
-  const m = output.match(/https?:\/\/\S+/)
+  // The script may first print the activation e-mail (HTML with w3.org DTD
+  // links) when SMTP is not configured; the real link follows this sentence.
+  const after = output.split(/Please visit the following URL[^\n]*\n/).pop()
+  const m =
+    after.match(/https?:\/\/\S+\/user\/\S+/) ||
+    output.match(/https?:\/\/[^\s"'<>]+\/user\/(?:activate|password\/set)\?[^\s"'<>]+/)
   return { output, setPasswordUrl: m ? m[0] : '' }
 })
 
