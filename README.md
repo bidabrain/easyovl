@@ -88,7 +88,9 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 
 ## 编译方式
 
-- **内置编译**（默认）：使用 Overleaf 镜像自带的精简 TeX Live，启动快，但缺少很多宏包（比如 ctex 中文支持）。
+- **内置编译**（默认）：直接在 Overleaf 容器里编译，速度最快。默认使用镜像自带的精简 TeX Live，缺少很多宏包（比如 ctex 中文支持）。
+  - 勾选「使用完整版 TeX Live」后，应用时控制台会下载 `texlive/texlive:latest-full`，把其中的 TeX Live 复制到数据卷 `overleaf_texlive` 并挂载给 Overleaf，然后删除镜像节省空间。只在首次或更换来源镜像时执行一次（约 10–30 分钟），之后编译和精简版一样快，宏包齐全。
+  - 注意内置编译不隔离用户，开启 `-shell-escape` 时相当于让所有用户能在 Overleaf 容器里执行命令。
 - **沙盒编译**（推荐）：每次编译在独立的 `texlive/texlive` 容器中运行，宏包齐全，用户之间也互相隔离。首次需要下载 TeX Live 镜像（`latest-full` 约 5 GB）。可以同时配置多个 TeX Live 版本，用户在项目菜单中选择。
 
 写中文文档时请在 Overleaf 的项目菜单里把编译器设为 **XeLaTeX** 或 **LuaLaTeX**。

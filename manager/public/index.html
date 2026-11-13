@@ -191,7 +191,7 @@
               <input type="radio" name="sandbox" data-k="compile.sandbox" value="false" />
               <div>
                 <strong>内置编译</strong>
-                <p class="muted">使用镜像自带的精简 TeX Live，下载最少、启动最快，但缺少很多宏包。所有用户共享同一个容器。</p>
+                <p class="muted">直接在 Overleaf 容器里编译，速度最快。默认是精简 TeX Live，可在下方换成完整版。所有用户共享同一个容器。</p>
               </div>
             </label>
             <label class="choice">
@@ -202,6 +202,16 @@
               </div>
             </label>
           </div>
+        </div>
+        <div class="card" id="builtin-opts">
+          <h2>内置 TeX Live</h2>
+          <label class="check"><input type="checkbox" data-k="compile.fullTexlive" /> 使用完整版 TeX Live（宏包齐全，支持 ctex 中文）</label>
+          <p class="muted">应用时会下载下方的 TeX Live 镜像（完整版约 5 GB），把其中的 TeX Live 复制到数据卷 <code>overleaf_texlive</code> 并挂载给 Overleaf，之后删除镜像以节省空间。只在首次或更换镜像时进行，约需 10~30 分钟。</p>
+          <label class="field">
+            <span>TeX Live 来源镜像</span>
+            <input data-k="compile.fullImage" />
+            <small class="muted">texlive/texlive:latest-full（完整，含中文）、texlive/texlive:latest-medium（较小，不含中文宏包）、texlive/texlive:TL2024-historic（固定年份）</small>
+          </label>
         </div>
         <div class="card" id="sandbox-opts">
           <h2>TeX Live 镜像</h2>

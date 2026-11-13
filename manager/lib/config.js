@@ -12,6 +12,7 @@ export const VOLUMES = {
   data: 'overleaf_data',
   mongo: 'overleaf_mongo',
   redis: 'overleaf_redis',
+  texlive: 'overleaf_texlive',
 }
 export const CONTAINERS = {
   sharelatex: 'overleaf-sharelatex',
@@ -45,6 +46,9 @@ export const DEFAULTS = {
   },
   compile: {
     sandbox: false,
+    // built-in compile with a full TeX Live copied from a texlive image
+    fullTexlive: false,
+    fullImage: 'texlive/texlive:latest-full',
     images: 'texlive/texlive:latest-full',
     imageNames: 'TeX Live (latest-full)',
     defaultImage: '',

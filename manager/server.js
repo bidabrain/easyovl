@@ -14,7 +14,14 @@ import {
   saveConfig,
   tunnelHostname,
 } from './lib/config.js'
-import { buildEnv, renderCompose, setDockerRoot, texliveImages, writeCompose } from './lib/compose.js'
+import {
+  buildEnv,
+  renderCompose,
+  setDockerRoot,
+  texliveImages,
+  useFullTexlive,
+  writeCompose,
+} from './lib/compose.js'
 import {
   composeArgs,
   containerStatus,
@@ -154,6 +161,47 @@ async function detectDockerRoot() {
   if (r.code === 0) setDockerRoot(r.stdout.trim())
 }
 
+const TEXLIVE_MARKER = '.easyovl-image'
+
+/**
+ * Copy /usr/local/texlive out of a texlive/texlive image into a named volume
+ * (once per image), so the built-in compiler gets the full distribution.
+ */
+async function ensureFullTexlive(cfg, { log, step }) {
+  const img = cfg.compile.fullImage
+  const vol = VOLUMES.texlive
+  // read the marker with a small image that the stack needs anyway
+  if (!(await imageExists(cfg.images.redis))) await step(['pull', cfg.images.redis])
+  const r = await run(
+    ['run', '--rm', '-v', `${vol}:/t`, '--entrypoint', 'cat', cfg.images.redis, `/t/${TEXLIVE_MARKER}`],
+    { timeout: 60000 }
+  )
+  if (r.code === 0 && r.stdout.trim() === img) {
+    log(`完整版 TeX Live 已就绪（${img}）`)
+    return
+  }
+
+  const hadImage = await imageExists(img)
+  if (!hadImage) {
+    log(`下载 TeX Live 镜像 ${img}（完整版约 5GB，首次需要较长时间）`)
+    await step(['pull', img])
+  }
+  // the old Overleaf container may still be using the volume
+  await step(['rm', '-f', CONTAINERS.sharelatex], { allowFail: true })
+  log('正在把 TeX Live 复制到数据卷（约 5~10 分钟，取决于硬盘速度）...')
+  await step(
+    [
+      'run', '--rm', '-e', `IMG=${img}`, '-v', `${vol}:/t`, '--entrypoint', 'sh', img, '-c',
+      `find /t -mindepth 1 -delete && cp -a /usr/local/texlive/. /t/ && printf '%s' "$IMG" > /t/${TEXLIVE_MARKER}`,
+    ],
+    { label: `复制 ${img} 中的 /usr/local/texlive 到卷 ${vol}` }
+  )
+  if (!hadImage && !texliveImages(cfg).includes(img)) {
+    log('删除 TeX Live 镜像以节省磁盘空间（内容已在数据卷中）')
+    await step(['image', 'rm', img], { allowFail: true })
+  }
+}
+
 function startApplyJob(title = '应用配置并启动') {
   return startJob(title, async ({ log, step }) => {
     let cfg = loadConfig()
@@ -192,6 +240,8 @@ function startApplyJob(title = '应用配置并启动') {
         await step(['pull', img])
       }
     }
+
+    if (useFullTexlive(cfg)) await ensureFullTexlive(cfg, { log, step })
 
     await step(composeArgs('up', '-d', '--remove-orphans'))
     log('容器已启动。Overleaf 首次启动需要 1~3 分钟完成初始化。')

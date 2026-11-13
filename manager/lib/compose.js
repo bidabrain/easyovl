@@ -77,6 +77,19 @@ export function texliveImages(cfg) {
   return splitList(cfg.compile.images)
 }
 
+/** Built-in compile using the full TeX Live volume instead of the slim one. */
+export function useFullTexlive(cfg) {
+  return !cfg.compile.sandbox && cfg.compile.fullTexlive && Boolean(cfg.compile.fullImage)
+}
+
+// The image links /usr/local/bin/* to /usr/local/texlive/<year>/bin/<arch>.
+// With the full TeX Live volume mounted over /usr/local/texlive the year may
+// differ, so re-link the binaries before handing over to the normal init.
+const FULL_TEXLIVE_ENTRY =
+  'tl=$(ls -d /usr/local/texlive/*/bin/*-linux 2>/dev/null | head -n 1); ' +
+  'if [ -n "$tl" ]; then for f in "$tl"/*; do ln -sf "$f" /usr/local/bin/; done; fi; ' +
+  'exec /sbin/my_init'
+
 export function buildEnv(cfg) {
   const o = cfg.overleaf
   const f = cfg.features
@@ -198,6 +211,17 @@ export function buildCompose(cfg) {
   if (cfg.compile.sandbox) {
     services.sharelatex.volumes.push('/var/run/docker.sock:/var/run/docker.sock')
   }
+  const volumes = {
+    [VOLUMES.data]: { name: VOLUMES.data },
+    [VOLUMES.mongo]: { name: VOLUMES.mongo },
+    [VOLUMES.redis]: { name: VOLUMES.redis },
+  }
+  if (useFullTexlive(cfg)) {
+    services.sharelatex.volumes.push(`${VOLUMES.texlive}:/usr/local/texlive:ro`)
+    services.sharelatex.entrypoint = ['/bin/sh', '-c', FULL_TEXLIVE_ENTRY]
+    // filled by the manager before `compose up`
+    volumes[VOLUMES.texlive] = { name: VOLUMES.texlive, external: true }
+  }
 
   const t = cfg.tunnel
   const cf = {
@@ -228,11 +252,7 @@ export function buildCompose(cfg) {
   return {
     name: PROJECT,
     services,
-    volumes: {
-      [VOLUMES.data]: { name: VOLUMES.data },
-      [VOLUMES.mongo]: { name: VOLUMES.mongo },
-      [VOLUMES.redis]: { name: VOLUMES.redis },
-    },
+    volumes,
     networks: { default: { name: NETWORK, external: true } },
   }
 }

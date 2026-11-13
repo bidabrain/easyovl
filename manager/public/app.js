@@ -185,6 +185,8 @@ function setDirty(d) {
 function syncVisibility() {
   const f = readForm()
   $('#sandbox-opts').classList.toggle('hidden', !f.compile.sandbox)
+  $('#builtin-opts').classList.toggle('hidden', f.compile.sandbox)
+  $('[data-k="compile.fullImage"]').disabled = !f.compile.fullTexlive
   $$('#email-opts input').forEach(i => (i.disabled = !f.email.enabled))
   $$('.tmode-panel').forEach(p => p.classList.toggle('hidden', p.dataset.tmode !== f.tunnel.mode))
   const z = $('#cf-zone').selectedOptions[0]
