@@ -39,6 +39,26 @@ cd easyovl
 
 浏览器会自动打开 <http://localhost:8090>。第一次进入时设置一个**控制台管理密码**。
 
+### 在 NAS / 服务器上部署
+
+群晖、威联通、Unraid、普通 Linux 服务器都可以，要求 **x86_64（amd64）** 架构（Overleaf 镜像没有 ARM 版本）以及 Docker + compose 插件。SSH 登录后：
+
+```bash
+git clone https://github.com/bidabrain/easyovl.git && cd easyovl
+```
+
+控制台默认只允许本机访问，NAS 上需要让局域网能打开：
+
+```bash
+echo "EASYOVL_BIND=0.0.0.0" > .env
+```
+
+```bash
+sudo docker compose up -d --build
+```
+
+然后在局域网电脑上打开 `http://NAS的IP:8090`。群晖的 Docker 数据目录（`/volume1/@docker`）会被自动识别，沙盒编译无需额外设置。
+
 ### 3. 启动 Overleaf
 
 1. 在「站点」页确认端口（默认 `8080`），在「编译」页选择编译方式。
@@ -106,7 +126,7 @@ docker restart easyovl-manager
 
 **想让局域网内其他电脑也能打开控制台？** 复制 `.env.example` 为 `.env`，设置 `EASYOVL_BIND=0.0.0.0`，然后重新运行启动脚本。（Overleaf 本身默认就允许局域网访问，可以在「站点」页改为仅本机。）
 
-**沙盒编译在 Windows 上报找不到目录？** 沙盒编译依赖 Docker 守护进程能访问 `/var/lib/docker/volumes/overleaf_data/_data`，Docker Desktop（WSL 2）和 Linux 都满足这一点。如果你使用的是 rootless Docker 或修改过 Docker 数据目录，请在「高级」页用 `SANDBOXED_COMPILES_HOST_DIR_COMPILES` / `SANDBOXED_COMPILES_HOST_DIR_OUTPUT` 覆盖为实际路径。
+**沙盒编译报找不到目录？** 沙盒编译依赖 Docker 守护进程能访问 `<Docker 数据目录>/volumes/overleaf_data/_data`，控制台会通过 `docker info` 自动识别数据目录。如果你使用的是 rootless Docker 等特殊环境，请在「高级」页用 `SANDBOXED_COMPILES_HOST_DIR_COMPILES` / `SANDBOXED_COMPILES_HOST_DIR_OUTPUT` 覆盖为实际路径。
 
 **LDAP / SAML / OIDC 登录、Git 集成等功能？** 在「高级 → 自定义环境变量」里按 [CE+ Wiki](https://github.com/yu-i-i/overleaf-cep/wiki) 添加对应变量。
 

@@ -14,7 +14,7 @@ import {
   saveConfig,
   tunnelHostname,
 } from './lib/config.js'
-import { buildEnv, renderCompose, texliveImages, writeCompose } from './lib/compose.js'
+import { buildEnv, renderCompose, setDockerRoot, texliveImages, writeCompose } from './lib/compose.js'
 import {
   composeArgs,
   containerStatus,
@@ -149,10 +149,16 @@ function listBackups() {
 
 // ---------------------------------------------------------------- jobs
 
+async function detectDockerRoot() {
+  const r = await run(['info', '--format', '{{.DockerRootDir}}'], { timeout: 15000 })
+  if (r.code === 0) setDockerRoot(r.stdout.trim())
+}
+
 function startApplyJob(title = '应用配置并启动') {
   return startJob(title, async ({ log, step }) => {
     let cfg = loadConfig()
     await ensureNetwork()
+    await detectDockerRoot()
 
     if (cfg.tunnel.mode === 'api') {
       const t = cfg.tunnel
@@ -569,4 +575,5 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, () => {
   console.log(`easyovl manager listening on http://0.0.0.0:${PORT}`)
   ensureNetwork().catch(() => {})
+  detectDockerRoot().catch(() => {})
 })

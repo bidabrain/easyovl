@@ -62,9 +62,15 @@ export function toYaml(value, indent = 0) {
 
 const bool = b => (b ? 'true' : 'false')
 
+// Docker data root differs on NAS systems (e.g. Synology: /volume1/@docker).
+let dockerRoot = '/var/lib/docker'
+export function setDockerRoot(p) {
+  if (p && p.startsWith('/')) dockerRoot = p.replace(/\/+$/, '')
+}
+
 /** Host path of the overleaf_data volume, as seen by the Docker daemon. */
 export function dataVolumeHostPath() {
-  return `/var/lib/docker/volumes/${VOLUMES.data}/_data`
+  return `${dockerRoot}/volumes/${VOLUMES.data}/_data`
 }
 
 export function texliveImages(cfg) {
