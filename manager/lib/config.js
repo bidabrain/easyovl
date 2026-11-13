@@ -1,3 +1,4 @@
+import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 
@@ -97,6 +98,11 @@ export const DEFAULTS = {
     cloudflared: 'cloudflare/cloudflared:latest',
   },
   extraEnv: '',
+  // Overleaf secrets that must stay stable across restarts/upgrades.
+  // Generated once, stored in config.json, never sent to the browser.
+  secrets: {
+    OVERLEAF_INVITE_TOKEN_SECRET: '',
+  },
 }
 
 function isObj(v) {
@@ -121,13 +127,33 @@ export function mergeKnown(base, src) {
   return out
 }
 
-export function loadConfig() {
-  try {
-    const raw = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'))
-    return mergeKnown(DEFAULTS, raw)
-  } catch {
-    return structuredClone(DEFAULTS)
+// keeps generated secrets stable until the config is first saved
+const pendingSecrets = {}
+
+function fillSecrets(cfg) {
+  let changed = false
+  for (const k of Object.keys(cfg.secrets)) {
+    if (cfg.secrets[k]) continue
+    pendingSecrets[k] ??= crypto.randomBytes(32).toString('base64')
+    cfg.secrets[k] = pendingSecrets[k]
+    changed = true
   }
+  return changed
+}
+
+export function loadConfig() {
+  let cfg
+  try {
+    cfg = mergeKnown(DEFAULTS, JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')))
+  } catch {
+    cfg = structuredClone(DEFAULTS)
+  }
+  if (fillSecrets(cfg) && configExists()) {
+    try {
+      saveConfig(cfg)
+    } catch {}
+  }
+  return cfg
 }
 
 export function saveConfig(cfg) {
@@ -151,6 +177,7 @@ export const SECRET_PATHS = [
 
 export function redact(cfg) {
   const c = structuredClone(cfg)
+  delete c.secrets
   for (const [a, b] of SECRET_PATHS) {
     c[a][`${b}Set`] = Boolean(c[a][b])
     c[a][b] = ''
@@ -160,6 +187,7 @@ export function redact(cfg) {
 
 export function applyUpdate(current, incoming) {
   const next = mergeKnown(current, incoming)
+  next.secrets = structuredClone(current.secrets) // never changed from the browser
   for (const [a, b] of SECRET_PATHS) {
     const sent = incoming?.[a]?.[b]
     const clear = incoming?.[a]?.[`${b}Clear`]

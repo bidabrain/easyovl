@@ -113,6 +113,7 @@ export function buildEnv(cfg) {
     MAX_UPLOAD_SIZE: String(f.maxUploadSize),
     COMPILE_TIMEOUT: String(c.timeout),
   }
+  for (const [k, v] of Object.entries(cfg.secrets || {})) if (v) env[k] = v
   if (o.secureCookie) env.OVERLEAF_SECURE_COOKIE = 'true'
   if (o.adminEmail) env.OVERLEAF_ADMIN_EMAIL = o.adminEmail
   if (f.allowedDomains) {

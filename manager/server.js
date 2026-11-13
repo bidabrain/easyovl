@@ -152,6 +152,7 @@ function listBackups() {
       try {
         meta = JSON.parse(fs.readFileSync(path.join(dir, 'meta.json'), 'utf8'))
       } catch {}
+      delete meta.secrets // never sent to the browser
       return { name: d.name, files, ...meta }
     })
     .sort((a, b) => (a.name < b.name ? 1 : -1))
@@ -367,7 +368,14 @@ route('PUT', '/api/config', async req => {
 
 route('GET', '/api/compose', async () => {
   const cfg = loadConfig()
-  return { yaml: renderCompose(cfg), env: buildEnv(cfg) }
+  // mask secrets: the preview is for reading, not for copying credentials
+  const secrets = [
+    ...Object.values(cfg.secrets),
+    cfg.email.pass, cfg.tunnel.token, cfg.tunnel.tunnelToken, cfg.tunnel.apiToken,
+  ].filter(v => v && v.length >= 4)
+  const mask = text => secrets.reduce((t, v) => t.split(v).join('******'), text)
+  const env = Object.fromEntries(Object.entries(buildEnv(cfg)).map(([k, v]) => [k, mask(String(v))]))
+  return { yaml: mask(renderCompose(cfg)), env }
 })
 
 route('POST', '/api/apply', async () => ({ job: startApplyJob().id }))
@@ -555,7 +563,7 @@ route('POST', '/api/backups', async () => {
     if (t.code !== 0) throw new Error(`打包失败：${t.stderr.slice(-500)}`)
     fs.writeFileSync(
       path.join(dir, 'meta.json'),
-      JSON.stringify({ createdAt: new Date().toISOString(), image: `${cfg.overleaf.image}:${cfg.overleaf.tag}` }, null, 2)
+      JSON.stringify({ createdAt: new Date().toISOString(), image: `${cfg.overleaf.image}:${cfg.overleaf.tag}`, secrets: cfg.secrets }, null, 2)
     )
     log(`备份完成：data/backups/${name}`)
   })
@@ -566,6 +574,14 @@ route('POST', /^\/api\/backups\/([^/]+)\/restore$/, async (req, res, { params })
   const dir = safeBackupName(params[0])
   const cfg = loadConfig()
   const job = startJob(`恢复备份 ${params[0]}`, async ({ log, step }) => {
+    try {
+      const meta = JSON.parse(fs.readFileSync(path.join(dir, 'meta.json'), 'utf8'))
+      if (meta.secrets) {
+        for (const [k, v] of Object.entries(meta.secrets)) if (k in cfg.secrets && v) cfg.secrets[k] = v
+        saveConfig(cfg)
+        log('已从备份恢复 Overleaf 密钥')
+      }
+    } catch {}
     writeCompose(cfg)
     await ensureNetwork()
     log('停止 Overleaf ...')
