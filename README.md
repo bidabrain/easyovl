@@ -34,6 +34,8 @@ curl -fsSLO https://raw.githubusercontent.com/bidabrain/easyovl/main/docker-comp
 docker compose up -d
 ```
 
+> 群晖等 NAS 上命令前通常要加 `sudo`；Windows PowerShell 里请把 `curl` 写成 `curl.exe`。
+
 然后打开 `http://本机或NAS的IP:8090`，第一次进入时设置一个**控制台管理密码**。配置、生成的 compose 文件和备份都存放在同一文件夹下的 `data/`。
 
 - 也可以在群晖 Container Manager / 威联通 Container Station / Portainer 里「新建项目」，把 `docker-compose.yml` 的内容粘贴进去。
