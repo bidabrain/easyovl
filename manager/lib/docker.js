@@ -179,6 +179,7 @@ export async function containerStatus() {
     state: r.State,
     status: r.Status,
     health: r.Health || '',
+    exitCode: Number.isFinite(r.ExitCode) ? r.ExitCode : null,
   }))
 }
 

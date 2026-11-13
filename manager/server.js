@@ -380,9 +380,20 @@ route('GET', '/api/compose', async () => {
 
 route('POST', '/api/apply', async () => ({ job: startApplyJob().id }))
 
+/** compose service name -> container name */
+const SERVICE_CONTAINERS = {
+  sharelatex: CONTAINERS.sharelatex,
+  mongo: CONTAINERS.mongo,
+  'mongo-init': CONTAINERS.mongoInit,
+  redis: CONTAINERS.redis,
+  cloudflared: CONTAINERS.cloudflared,
+}
+
 route('POST', '/api/action', async req => {
   const { action, service } = await readJson(req)
-  const svc = service && ['sharelatex', 'mongo', 'redis', 'cloudflared'].includes(service) ? [service] : []
+  // an unknown service must not silently turn into "all services"
+  if (service && !(service in SERVICE_CONTAINERS)) throw new HttpError(400, '未知服务')
+  const svc = service ? [service] : []
   const cfg = loadConfig()
   writeCompose(cfg)
   const table = {
@@ -453,7 +464,7 @@ route('GET', '/api/status', async () => {
 
 route('GET', '/api/logs', async (req, res, { query }) => {
   const service = query.get('service') || 'sharelatex'
-  const name = CONTAINERS[service]
+  const name = SERVICE_CONTAINERS[service]
   if (!name) throw new HttpError(400, '未知服务')
   const tail = Math.min(Math.max(Number(query.get('tail')) || 300, 10), 5000)
   const r = await run(['logs', '--tail', String(tail), '--timestamps', name], { timeout: 15000 })

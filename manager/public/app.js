@@ -315,7 +315,7 @@ $('#cf-zone').addEventListener('change', () => {
 
 let lastStatus = null
 const STATE_TEXT = { running: '运行中', exited: '已停止', created: '已创建', restarting: '重启中', paused: '已暂停', dead: '异常' }
-const SERVICE_NAME = { sharelatex: 'Overleaf', mongo: 'MongoDB', redis: 'Redis', cloudflared: 'Cloudflared' }
+const SERVICE_NAME = { sharelatex: 'Overleaf', mongo: 'MongoDB', 'mongo-init': 'MongoDB 初始化', redis: 'Redis', cloudflared: 'Cloudflared' }
 
 function dot(cls) {
   return `<span class="dot ${cls}"></span>`
@@ -385,13 +385,24 @@ async function refreshStatus() {
   } else {
     tbody.innerHTML = s.containers
       .map(c => {
-        const cls = c.state === 'running' ? (c.health === 'unhealthy' ? 'warn' : 'ok') : 'bad'
+        let cls = c.state === 'running' ? (c.health === 'unhealthy' ? 'warn' : 'ok') : 'bad'
+        let text = c.status || STATE_TEXT[c.state] || c.state
+        // one-shot job: exiting with code 0 is the expected, successful outcome
+        const oneShot = c.service === 'mongo-init'
+        if (oneShot && c.state === 'exited') {
+          const ok = c.exitCode === 0 || /\(0\)/.test(c.status || '')
+          cls = ok ? 'ok' : 'bad'
+          text = ok ? '已完成（一次性任务，退出是正常的）' : `初始化失败：${c.status}`
+        } else if (oneShot && c.state === 'running') {
+          cls = 'busy'
+          text = '正在初始化数据库…'
+        }
         return `<tr>
           <td><strong>${esc(SERVICE_NAME[c.service] || c.service)}</strong></td>
-          <td><span class="pill">${dot(cls)}${esc(c.status || STATE_TEXT[c.state] || c.state)}</span></td>
+          <td><span class="pill">${dot(cls)}${esc(text)}</span></td>
           <td class="muted">${esc(c.image)}</td>
           <td style="white-space:nowrap">
-            <button class="btn small" data-svc-action="restart" data-svc="${esc(c.service)}">重启</button>
+            <button class="btn small" data-svc-action="restart" data-svc="${esc(c.service)}">${oneShot ? '重新运行' : '重启'}</button>
             <button class="btn small" data-svc-log="${esc(c.service)}">日志</button>
           </td></tr>`
       })
