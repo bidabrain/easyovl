@@ -22,42 +22,37 @@
 
 ### 2. 启动控制台
 
+控制台镜像由 GitHub Actions 自动构建并发布在 `ghcr.io/bidabrain/easyovl`，不需要自己编译，**只需要一个 `docker-compose.yml` 文件**。
+
+新建一个空文件夹（例如 NAS 上的 `/volume1/docker/easyovl`），进入后下载 compose 文件并启动：
+
 ```bash
-git clone https://github.com/bidabrain/easyovl.git
+curl -fsSLO https://raw.githubusercontent.com/bidabrain/easyovl/main/docker-compose.yml
 ```
 
 ```bash
-cd easyovl
+docker compose up -d
 ```
 
-- **Windows**：双击 `start.bat`
-- **macOS / Linux**：
+然后打开 `http://本机或NAS的IP:8090`，第一次进入时设置一个**控制台管理密码**。配置、生成的 compose 文件和备份都存放在同一文件夹下的 `data/`。
+
+- 也可以在群晖 Container Manager / 威联通 Container Station / Portainer 里「新建项目」，把 `docker-compose.yml` 的内容粘贴进去。
+- Windows 也可以克隆本仓库后双击 `start.bat`，macOS / Linux 运行 `./start.sh`（同样是拉取镜像，不编译）。
+- 控制台默认允许局域网访问。只想让本机访问时，在同一文件夹建 `.env` 写入 `EASYOVL_BIND=127.0.0.1`；改端口用 `EASYOVL_PORT=`。
+- NAS / 服务器需要 **x86_64（amd64）** 架构：控制台镜像支持 ARM，但 Overleaf 镜像只有 amd64 版本。
+- 群晖的 Docker 数据目录（`/volume1/@docker`）会被自动识别，沙盒编译无需额外设置。
+
+**升级控制台**：
 
 ```bash
-./start.sh
+docker compose pull && docker compose up -d
 ```
 
-浏览器会自动打开 <http://localhost:8090>。第一次进入时设置一个**控制台管理密码**。
-
-### 在 NAS / 服务器上部署
-
-群晖、威联通、Unraid、普通 Linux 服务器都可以，要求 **x86_64（amd64）** 架构（Overleaf 镜像没有 ARM 版本）以及 Docker + compose 插件。SSH 登录后：
+自己修改控制台代码时，用开发版 compose 在本地编译：
 
 ```bash
-git clone https://github.com/bidabrain/easyovl.git && cd easyovl
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 ```
-
-控制台默认只允许本机访问，NAS 上需要让局域网能打开：
-
-```bash
-echo "EASYOVL_BIND=0.0.0.0" > .env
-```
-
-```bash
-sudo docker compose up -d --build
-```
-
-然后在局域网电脑上打开 `http://NAS的IP:8090`。群晖的 Docker 数据目录（`/volume1/@docker`）会被自动识别，沙盒编译无需额外设置。
 
 ### 3. 启动 Overleaf
 
@@ -124,7 +119,7 @@ sudo docker compose up -d --build
 docker restart easyovl-manager
 ```
 
-**想让局域网内其他电脑也能打开控制台？** 复制 `.env.example` 为 `.env`，设置 `EASYOVL_BIND=0.0.0.0`，然后重新运行启动脚本。（Overleaf 本身默认就允许局域网访问，可以在「站点」页改为仅本机。）
+**只想让本机打开控制台？** 在 `docker-compose.yml` 同一文件夹建 `.env`，写入 `EASYOVL_BIND=127.0.0.1`，再运行 `docker compose up -d`。（Overleaf 本身也默认允许局域网访问，可以在「站点」页改为仅本机。）
 
 **沙盒编译报找不到目录？** 沙盒编译依赖 Docker 守护进程能访问 `<Docker 数据目录>/volumes/overleaf_data/_data`，控制台会通过 `docker info` 自动识别数据目录。如果你使用的是 rootless Docker 等特殊环境，请在「高级」页用 `SANDBOXED_COMPILES_HOST_DIR_COMPILES` / `SANDBOXED_COMPILES_HOST_DIR_OUTPUT` 覆盖为实际路径。
 
@@ -147,7 +142,7 @@ docker restart easyovl-manager
 
 控制台本身是一个无第三方依赖的 Node.js 程序（`manager/`），配置保存在 `data/config.json`，每次应用时生成 `data/stack/docker-compose.yml`。
 
-> 控制台能操作 Docker，相当于拥有本机管理员权限，因此默认只监听 `127.0.0.1`，并且需要密码登录。不要把控制台端口暴露到公网。
+> 控制台能操作 Docker，相当于拥有本机管理员权限，所以必须设置密码登录（连续输错会被临时锁定）。外网隧道只转发 Overleaf，不会暴露控制台；请不要在路由器上把控制台端口（8090）映射到公网。
 
 ## 许可
 

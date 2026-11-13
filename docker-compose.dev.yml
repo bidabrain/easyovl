@@ -1,0 +1,6 @@
+# Development override: build the console from ./manager instead of pulling it.
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+services:
+  manager:
+    build: ./manager
+    image: easyovl-manager:dev

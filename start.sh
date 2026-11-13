@@ -17,8 +17,8 @@ if [ -f .env ]; then
   [ -n "${v:-}" ] && PORT=$v
 fi
 
-echo "正在构建并启动 EasyOVL 控制台..."
-docker compose up -d --build
+echo "正在拉取并启动 EasyOVL 控制台..."
+docker compose pull && docker compose up -d
 
 URL="http://localhost:${PORT}"
 echo

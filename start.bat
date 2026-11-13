@@ -23,8 +23,14 @@ if exist .env (
   for /f "tokens=1,2 delims==" %%a in (.env) do if /i "%%a"=="EASYOVL_PORT" set PORT=%%b
 )
 
-echo 正在构建并启动 EasyOVL 控制台...
-docker compose up -d --build
+echo 正在拉取并启动 EasyOVL 控制台...
+docker compose pull
+if errorlevel 1 (
+  echo [错误] 拉取镜像失败，请检查网络。
+  pause
+  exit /b 1
+)
+docker compose up -d
 if errorlevel 1 (
   echo [错误] 启动失败，请查看上面的输出。
   pause
